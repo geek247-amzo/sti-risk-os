@@ -16,7 +16,7 @@ Queued: B3 — automated management reporting; B4 — PDF/Excel export.
 
 Unblocked and not started: none in Stream D. C1, D-1, D-2, and D-3 are complete.
 
-Active: E2 recording/CDR ingestion discovery; implementation follows the confirmed API shape.
+Staged: E2 recording/CDR ingestion implementation, waiting on Yeastar secret rotation and portal retention confirmation.
 
 Deferred: F3 final verification, until the remaining streams close.
 
@@ -53,7 +53,7 @@ Status: **complete**.
 Status: **in progress**.
 
 - B1 — **complete**, commit `9811c0e`. Live KPI aggregates cover collected/invoiced revenue, open opportunities, issued quote value, quote win rate, and open/completed service delivery. CSAT is explicitly reported as unavailable because no CSAT schema was found.
-- B2 — **complete**, current commit. KPI tiles now link directly to the underlying billing, CRM, quotations, and work-record surfaces. No new schema or reporting endpoint was needed; the existing KPI data layer and staff routes are reused.
+- B2 — **complete**, commit `f104fa4`. KPI tiles now link directly to the underlying billing, CRM, quotations, and work-record surfaces. No new schema or reporting endpoint was needed; the existing KPI data layer and staff routes are reused.
 - B3 — **queued**. Daily/weekly/monthly management reporting; confirm delivery channel before implementing email or WhatsApp output.
 - B4 — **queued**. PDF/Excel export for KPI dashboards and management reports.
 
@@ -92,7 +92,7 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 
 | Agent | Assignment | Status |
 |---|---|---|
-| Agent 1 | B2 → B4 | Active B-stream owner |
+| Agent 1 | B3 → B4 | Next B-stream owner |
 | Agent 2 | C1 / D | C1 and Stream D complete |
 | Agent 3 | E2 → E8 | E1 discovery complete; ingestion next |
 

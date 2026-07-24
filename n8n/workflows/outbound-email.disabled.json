@@ -1,0 +1,7 @@
+{
+  "name": "STI Risk - Outbound Email Recommendation (disabled template)",
+  "active": false,
+  "nodes": [],
+  "connections": {},
+  "notes": "Outbound email remains disabled until SMTP credentials and staff approval workflow are configured."
+}

@@ -1,0 +1,47 @@
+{
+  "name": "STI Risk - Ask Steve Staff Agent",
+  "active": true,
+  "settings": {},
+  "nodes": [
+    {
+      "parameters": {
+        "path": "sti-risk/staff-agent/chat",
+        "httpMethod": "POST",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Ask Steve Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "async function httpJson(url, options = {}) {\n  const response = await helpers.httpRequest({\n    method: options.method || 'GET',\n    url,\n    headers: options.headers || {},\n    body: options.body,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  const status = response.statusCode || response.status || 200;\n  return { ok: status >= 200 && status < 300, status, body: response.body ?? response };\n}\nfunction cleanJson(text) {\n  const fence = String.fromCharCode(96, 96, 96);\n  return String(text || '')\n    .replace(new RegExp('^' + fence + 'json\\\\s*', 'i'), '')\n    .replace(new RegExp('^' + fence + '\\\\s*', 'i'), '')\n    .replace(new RegExp(fence + '$', 'i'), '')\n    .trim();\n}\nfunction parseDecision(text) {\n  try {\n    const parsed = JSON.parse(cleanJson(text));\n    return parsed && typeof parsed === 'object' ? parsed : null;\n  } catch (_error) {\n    return null;\n  }\n}\nconst input = $json.body ?? $json;\nconst headers = $json.headers ?? {};\nconst token = headers['x-sti-agent-token'] || headers['X-STI-Agent-Token'] || input.agentToken;\nif (!$env.N8N_AGENT_TOKEN || token !== $env.N8N_AGENT_TOKEN) {\n  throw new Error('Unauthorized Steve request');\n}\nif (!$env.GEMINI_API_KEY) {\n  throw new Error('GEMINI_API_KEY is not configured');\n}\nconst agentHeaders = { 'content-type': 'application/json', 'x-sti-agent-token': $env.N8N_AGENT_TOKEN };\nconst query = String(input.message || '').slice(0, 12000);\nconst embeddingModel = $env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';\nconst chatModel = $env.GEMINI_CHAT_MODEL || 'gemini-2.5-flash';\nconst staffContextUrl = $env.STI_STAFF_AGENT_CONTEXT_URL || 'http://homepage:3000/api/internal/staff-agent/context';\nconst staffActionsUrl = $env.STI_STAFF_AGENT_ACTIONS_URL || 'http://homepage:3000/api/internal/staff-agent/actions';\nconst ragSearchUrl = $env.STI_RAG_SEARCH_URL || 'http://homepage:3000/api/internal/rag/search';\nconst userId = input.user?.id || input.userId;\nconst contextResponse = await httpJson(staffContextUrl, {\n  method: 'POST',\n  headers: agentHeaders,\n  body: { userId, user: input.user, sessionId: input.sessionId, message: query },\n});\nif (!contextResponse.ok) {\n  throw new Error(contextResponse.body?.error || 'Unable to load Steve platform context');\n}\nconst platformContext = contextResponse.body || {};\nconst embedResponse = await httpJson('https://generativelanguage.googleapis.com/v1beta/models/' + embeddingModel + ':embedContent', {\n  method: 'POST',\n  headers: {\n    'content-type': 'application/json',\n    'x-goog-api-key': $env.GEMINI_API_KEY,\n  },\n  body: {\n    content: { parts: [{ text: query }] },\n    output_dimensionality: 768,\n  },\n});\nconst embedBody = embedResponse.body;\nif (!embedResponse.ok) {\n  throw new Error(embedBody?.error?.message || 'Gemini embedding request failed');\n}\nconst embedding = embedBody?.embedding?.values || embedBody?.embeddings?.[0]?.values;\nconst ragResponse = await httpJson(ragSearchUrl, {\n  method: 'POST',\n  headers: agentHeaders,\n  body: { query, embedding, limit: 8 },\n});\nconst ragBody = ragResponse.body;\nif (!ragResponse.ok) {\n  throw new Error(ragBody?.error || 'RAG search failed');\n}\nconst retrievedDocuments = [...(platformContext.ragResults || []), ...(ragBody.results || [])].slice(0, 12);\nconst retrievedText = retrievedDocuments.map((doc, index) => 'Document ' + (index + 1) + ': ' + (doc.entityType || doc.entity_type) + ' ' + (doc.entityId || doc.entity_id) + '\\n' + String(doc.content || '').slice(0, 3500)).join('\\n\\n');\nconst historyText = Array.isArray(input.history) ? input.history.map((item) => item.role + ': ' + item.content).join('\\n').slice(-6000) : '';\nconst attachmentText = Array.isArray(input.attachments) ? input.attachments.map((item) => 'Attachment ' + item.originalName + ':\\n' + (item.extractedText || '')).join('\\n\\n') : '';\nconst allowedActions = platformContext.allowedActions || [];\nconst platformData = JSON.stringify({\n  deals: platformContext.deals || [],\n  contacts: platformContext.contacts || [],\n  growthRecommendations: platformContext.growthRecommendations || [],\n  projects: platformContext.projects || [],\n  tasks: platformContext.tasks || [],\n}).slice(0, 18000);\nconst system = 'You are Steve, the STI Risk platform intelligence assistant. You help authenticated staff work across deals, contacts, growth, projects, and tasks. Use only supplied STI Risk context, RAG, conversation history, and uploaded text. Be direct and operational. You may request at most one tool action. Allowed actions: ' + (allowedActions.join(', ') || 'none') + '. Direct writes are limited to internal tasks, task comments, and internal communication notes. Deal/contact/project/growth changes must be approval-first recommendations. Do not send outreach, enroll contacts, change pricing, make finance decisions, or perform destructive actions. Return only JSON with keys: reply, action, actionPayload, requiresApproval, reason.';\nconst prompt = 'Current Steve context:\\n' + (platformContext.context || input.context || '') + '\\n\\nStructured platform data:\\n' + platformData + '\\n\\nRecent conversation:\\n' + historyText + '\\n\\nRetrieved STI Risk platform memory:\\n' + (retrievedText || 'No RAG documents matched.') + '\\n\\nUploaded document text:\\n' + (attachmentText || 'No uploaded text.') + '\\n\\nUser request:\\n' + query;\nconst chatResponse = await httpJson('https://generativelanguage.googleapis.com/v1beta/models/' + chatModel + ':generateContent', {\n  method: 'POST',\n  headers: {\n    'content-type': 'application/json',\n    'x-goog-api-key': $env.GEMINI_API_KEY,\n  },\n  body: {\n    system_instruction: { parts: [{ text: system }] },\n    contents: [{ role: 'user', parts: [{ text: prompt }] }],\n    generationConfig: { temperature: 0.2, maxOutputTokens: 1200, response_mime_type: 'application/json' },\n  },\n});\nconst chatBody = chatResponse.body;\nif (!chatResponse.ok) {\n  throw new Error(chatBody?.error?.message || 'Gemini chat request failed');\n}\nconst rawContent = (chatBody.candidates?.[0]?.content?.parts || []).map((part) => part.text || '').join('').trim();\nconst decision = parseDecision(rawContent) || {\n  reply: rawContent || 'Steve did not return a text response.',\n  action: null,\n  actionPayload: null,\n  requiresApproval: true,\n  reason: 'unparseable_model_response',\n};\nlet actionResult = null;\nconst requestedAction = typeof decision.action === 'string' ? decision.action : null;\nif (requestedAction) {\n  const actionResponse = await httpJson(staffActionsUrl, {\n    method: 'POST',\n    headers: agentHeaders,\n    body: {\n      userId,\n      user: input.user,\n      sessionId: input.sessionId,\n      action: requestedAction,\n      payload: decision.actionPayload || {},\n    },\n  });\n  actionResult = actionResponse.body;\n  if (!actionResponse.ok) {\n    const fallbackResponse = await httpJson(staffActionsUrl, {\n      method: 'POST',\n      headers: agentHeaders,\n      body: {\n        userId,\n        user: input.user,\n        sessionId: input.sessionId,\n        action: 'create_recommendation',\n        payload: {\n          title: 'Steve action requires review',\n          body: String(decision.reply || 'Steve proposed an action.') + '\\n\\nAction failed: ' + (actionResponse.body?.error || actionResponse.status),\n          recommendationType: 'steve_chat_action_review',\n          metadata: { requestedAction, reason: decision.reason || null },\n        },\n      },\n    });\n    actionResult = fallbackResponse.body;\n  }\n}\nconst suffix = actionResult?.taskId\n  ? '\\n\\nTask created: ' + actionResult.taskId\n  : actionResult?.commentId\n    ? '\\n\\nTask comment added: ' + actionResult.commentId\n    : actionResult?.communicationId\n      ? '\\n\\nInternal note logged: ' + actionResult.communicationId\n      : actionResult?.recommendationId\n        ? '\\n\\nApproval recommendation created: ' + actionResult.recommendationId\n        : '';\nconst content = String(decision.reply || 'Steve completed the review.').trim() + suffix;\nreturn [{ json: { sessionId: input.sessionId, message: { role: 'assistant', content }, usage: chatBody.usageMetadata || null, retrievedDocuments, actionResult, requestedAction } }];"
+      },
+      "name": "Gemini RAG Answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Ask Steve Webhook": {
+      "main": [
+        [
+          {
+            "node": "Gemini RAG Answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

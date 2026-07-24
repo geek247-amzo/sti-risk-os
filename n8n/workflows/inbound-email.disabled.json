@@ -1,0 +1,7 @@
+{
+  "name": "STI Risk - Inbound Email Intake (disabled template)",
+  "active": false,
+  "nodes": [],
+  "connections": {},
+  "notes": "Configure IMAP credentials, summarize inbound email, then call /api/hermes/tools/create_recommendation with HMAC headers."
+}

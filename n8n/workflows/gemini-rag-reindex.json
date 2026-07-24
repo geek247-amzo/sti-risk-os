@@ -1,0 +1,76 @@
+{
+  "name": "STI Risk - Gemini RAG Reindex",
+  "active": true,
+  "settings": {},
+  "nodes": [
+    {
+      "parameters": {
+        "path": "sti-risk/staff-agent/reindex",
+        "httpMethod": "POST",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "name": "Reindex Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "triggerTimes": [
+          {
+            "mode": "everyDay",
+            "hour": 2,
+            "minute": 15
+          }
+        ]
+      },
+      "name": "Daily RAG Reindex",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        0,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "async function httpJson(url, options = {}) {\n  const response = await helpers.httpRequest({\n    method: options.method || 'GET',\n    url,\n    headers: options.headers || {},\n    body: options.body,\n    json: true,\n    returnFullResponse: true,\n    ignoreHttpStatusErrors: true,\n  });\n  const status = response.statusCode || response.status || 200;\n  return { ok: status >= 200 && status < 300, status, body: response.body ?? response };\n}\nconst input = $json.body ?? $json;\nconst headers = $json.headers ?? {};\nconst token = headers['x-sti-agent-token'] || headers['X-STI-Agent-Token'] || input.agentToken;\nif (!$env.N8N_AGENT_TOKEN || token !== $env.N8N_AGENT_TOKEN) {\n  throw new Error('Unauthorized reindex request');\n}\nif (!$env.GEMINI_API_KEY) {\n  throw new Error('GEMINI_API_KEY is not configured');\n}\nconst limit = Math.min(Math.max(Number(input.limit || 25), 1), 50);\nconst pendingResponse = await httpJson($env.STI_RAG_PENDING_URL, {\n  method: 'POST',\n  headers: {\n    'content-type': 'application/json',\n    'x-sti-agent-token': $env.N8N_AGENT_TOKEN,\n  },\n  body: { limit },\n});\nconst pendingBody = pendingResponse.body;\nif (!pendingResponse.ok) {\n  throw new Error(pendingBody?.error || 'Unable to load pending RAG documents');\n}\nconst documents = pendingBody.documents || [];\nconst embeddingModel = $env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-2';\nlet embedded = 0;\nlet failed = 0;\nfor (const doc of documents) {\n  try {\n    const embedResponse = await httpJson(`https://generativelanguage.googleapis.com/v1beta/models/${embeddingModel}:embedContent`, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-goog-api-key': $env.GEMINI_API_KEY,\n      },\n      body: {\n        content: { parts: [{ text: String(doc.content || '').slice(0, 24000) }] },\n        output_dimensionality: 768,\n      },\n    });\n    const embedBody = embedResponse.body;\n    if (!embedResponse.ok) throw new Error(embedBody?.error?.message || 'Gemini embedding failed');\n    const embedding = embedBody?.embedding?.values || embedBody?.embeddings?.[0]?.values;\n    const updateResponse = await httpJson($env.STI_RAG_EMBEDDING_URL, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-sti-agent-token': $env.N8N_AGENT_TOKEN,\n      },\n      body: { id: doc.id, embedding },\n    });\n    if (!updateResponse.ok) throw new Error(updateResponse.body?.error || 'Embedding update failed');\n    embedded += 1;\n  } catch (error) {\n    failed += 1;\n    await httpJson($env.STI_RAG_EMBEDDING_URL, {\n      method: 'POST',\n      headers: {\n        'content-type': 'application/json',\n        'x-sti-agent-token': $env.N8N_AGENT_TOKEN,\n      },\n      body: { id: doc.id, error: error.message || 'Embedding failed' },\n    }).catch(() => undefined);\n  }\n}\nreturn [{ json: { ok: true, requested: limit, loaded: documents.length, embedded, failed } }];"
+      },
+      "name": "Embed Pending Documents",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Reindex Webhook": {
+      "main": [
+        [
+          {
+            "node": "Embed Pending Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily RAG Reindex": {
+      "main": [
+        [
+          {
+            "node": "Embed Pending Documents",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "STI Risk - Form Intake (disabled template)",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "path": "sti-risk/form-intake",
+        "httpMethod": "POST",
+        "responseMode": "responseNode"
+      },
+      "name": "Public Form Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.STI_CRM_BASE_URL}}/api/webhooks/n8n/form-submission",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-STI-Source", "value": "n8n_form_intake" },
+            { "name": "X-STI-Idempotency-Key", "value": "={{$json.id || $execution.id}}" },
+            { "name": "X-STI-Timestamp", "value": "={{Date.now()}}" },
+            { "name": "X-STI-Signature", "value": "sha256=configure-hmac-expression" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        }
+      },
+      "name": "Send to CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [280, 0]
+    }
+  ],
+  "connections": {
+    "Public Form Webhook": {
+      "main": [[{ "node": "Send to CRM", "type": "main", "index": 0 }]]
+    }
+  }
+}

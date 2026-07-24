@@ -1,0 +1,7 @@
+{
+  "name": "STI Risk - Daily Stale Deal Review (disabled template)",
+  "active": false,
+  "nodes": [],
+  "connections": {},
+  "notes": "Scheduled Hermes review should create recommendations only; no automatic stage changes."
+}

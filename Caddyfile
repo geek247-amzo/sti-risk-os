@@ -1,0 +1,5 @@
+{$SITE_DOMAIN} {
+	encode zstd gzip
+	header /staff* Cache-Control "no-store, no-cache, must-revalidate"
+	reverse_proxy homepage:3000
+}

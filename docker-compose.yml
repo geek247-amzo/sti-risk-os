@@ -1,0 +1,133 @@
+services:
+  homepage:
+    build: .
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://stirisk.cloudmonkey.co.za}
+      DATABASE_URL: postgres://sti:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/sti_risk
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:?WEBHOOK_SECRET is required}
+      N8N_AGENT_TOKEN: ${N8N_AGENT_TOKEN:?N8N_AGENT_TOKEN is required}
+      WHATSAPP_WEBHOOK_SECRET: ${WHATSAPP_WEBHOOK_SECRET:-}
+      MESSENGER_API_TOKEN: ${MESSENGER_API_TOKEN:-}
+      STAFF_EMAIL_DOMAIN: ${STAFF_EMAIL_DOMAIN:-stirisk.co.za}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
+      MICROSOFT_REDIRECT_URI: ${MICROSOFT_REDIRECT_URI:-https://stirisk.cloudmonkey.co.za/api/auth/microsoft/callback}
+      MICROSOFT_TOKEN_ENCRYPTION_KEY: ${MICROSOFT_TOKEN_ENCRYPTION_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_CHAT_MODEL: ${GEMINI_CHAT_MODEL:-gemini-2.5-flash}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
+      N8N_AGENT_WEBHOOK_URL: ${N8N_AGENT_WEBHOOK_URL:-http://n8n:5678/webhook/sti-risk/staff-agent/chat}
+      N8N_WHATSAPP_AGENT_WEBHOOK_URL: ${N8N_WHATSAPP_AGENT_WEBHOOK_URL:-http://n8n:5678/webhook/sti-risk/whatsapp-agent/chat}
+      N8N_LEAD_IMAGE_WEBHOOK_URL: ${N8N_LEAD_IMAGE_WEBHOOK_URL:-http://n8n:5678/webhook/sti-risk/contact-image-intake}
+      MESSENGER_STATUS_URL: ${MESSENGER_STATUS_URL:-http://messenger:3010/readyz}
+      LEMLIST_BASIC_AUTH: ${LEMLIST_BASIC_AUTH:-}
+      LEMLIST_API_USERNAME: ${LEMLIST_API_USERNAME:-}
+      LEMLIST_API_PASSWORD: ${LEMLIST_API_PASSWORD:-}
+      LEMLIST_WEBHOOK_SECRET: ${LEMLIST_WEBHOOK_SECRET:-}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:-admin@stirisk.co.za}
+      INITIAL_ADMIN_NAME: ${INITIAL_ADMIN_NAME:-STI Risk Super Admin}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD is required}
+      ALLOW_STAFF_PASSWORD_LOGIN: ${ALLOW_STAFF_PASSWORD_LOGIN:-false}
+      MELLISSA_PASSWORD: ${MELLISSA_PASSWORD:-}
+      VUSI_PASSWORD: ${VUSI_PASSWORD:-}
+      GEORGE_PASSWORD: ${GEORGE_PASSWORD:-}
+      KIRIL_PASSWORD: ${KIRIL_PASSWORD:-}
+      STEVE_PASSWORD: ${STEVE_PASSWORD:-}
+      PRINT_GENERATED_PASSWORDS: ${PRINT_GENERATED_PASSWORDS:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+    expose:
+      - "3000"
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: sti_risk
+      POSTGRES_USER: sti
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sti -d sti_risk"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    expose:
+      - "5432"
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: unless-stopped
+    environment:
+      N8N_HOST: n8n
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://n8n:5678/
+      STI_CRM_BASE_URL: http://homepage:3000
+      STI_WEBHOOK_SECRET: ${WEBHOOK_SECRET:?WEBHOOK_SECRET is required}
+      N8N_AGENT_TOKEN: ${N8N_AGENT_TOKEN:?N8N_AGENT_TOKEN is required}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      STI_STAFF_AGENT_CONTEXT_URL: http://homepage:3000/api/internal/staff-agent/context
+      STI_STAFF_AGENT_ACTIONS_URL: http://homepage:3000/api/internal/staff-agent/actions
+      STI_WHATSAPP_RESOLVE_URL: http://homepage:3000/api/internal/whatsapp/resolve-user
+      STI_WHATSAPP_CONTEXT_URL: http://homepage:3000/api/internal/whatsapp/agent-context
+      STI_WHATSAPP_ACTIONS_URL: http://homepage:3000/api/internal/whatsapp/actions
+      STI_WHATSAPP_RESPOND_URL: http://homepage:3000/api/internal/whatsapp/respond
+      STI_RAG_SEARCH_URL: http://homepage:3000/api/internal/rag/search
+      STI_RAG_PENDING_URL: http://homepage:3000/api/internal/rag/pending
+      STI_RAG_EMBEDDING_URL: http://homepage:3000/api/internal/rag/embedding
+    depends_on:
+      - homepage
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    expose:
+      - "5678"
+
+  hermes:
+    image: ghcr.io/lmnr-ai/hermes:latest
+    restart: unless-stopped
+    environment:
+      STI_CRM_BASE_URL: http://homepage:3000
+      STI_WEBHOOK_SECRET: ${WEBHOOK_SECRET:?WEBHOOK_SECRET is required}
+      HERMES_API_KEY: ${HERMES_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    depends_on:
+      - homepage
+    volumes:
+      - hermes_data:/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:-stirisk.cloudmonkey.co.za}
+    depends_on:
+      - homepage
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  postgres_data:
+  n8n_data:
+  hermes_data:
+  caddy_data:
+  caddy_config:
+  uploads:

@@ -193,6 +193,29 @@ function Projects() {
     }
   }
 
+  async function triggerTestimonialReferral(project: Project) {
+    setSaving(true);
+    setError("");
+    setSuccess("");
+    try {
+      const response = await fetch(`/api/projects/${project.id}/testimonial-referral-trigger`, {
+        method: "POST",
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Unable to create client follow-up");
+      setSuccess(
+        body.created
+          ? `Testimonial/referral follow-up created for ${project.name}.`
+          : "Testimonial/referral follow-up already exists for this project.",
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to create client follow-up");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -519,6 +542,16 @@ function Projects() {
                       >
                         Billing
                       </Link>
+                      {project.status === "completed" && (
+                        <button
+                          type="button"
+                          disabled={saving}
+                          onClick={() => void triggerTestimonialReferral(project)}
+                          className="rounded-md border border-brand-orange/40 px-2.5 py-1 text-xs text-brand-orange hover:bg-brand-orange/5 disabled:opacity-50"
+                        >
+                          Testimonial/referral
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

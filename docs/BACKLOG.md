@@ -8,29 +8,29 @@ This is the canonical hand-off and execution backlog. Every ticket follows:
 
 ## Current status
 
-Complete and live: F1, F2, C2, D-4, A1, A2, A3, and B1.
+Complete and live: F1, F2, C2, D-4, A1, A2, A3, B1, C1, D-1, D-2, and D-3.
 
 Active: B2 — KPI drill-down UI.
 
 Queued: B3 — automated management reporting; B4 — PDF/Excel export.
 
-Unblocked but not started: D-3. C1, D-1, and D-2 are complete.
+Unblocked and not started: none in Stream D. C1, D-1, D-2, and D-3 are complete.
 
 Blocked: Stream E pending Yeastar API/auth and PABX details.
 
 Deferred: F3 final verification, until the remaining streams close.
 
-The repository is currently clean, synced at `9811c0e`, and production has been verified healthy (`/health` 200; `/ready` 200 with database ready). The Kiril/Vusi confirmation message remains the open coordination item.
+The repository is currently clean and production has been verified healthy (`/health` 200; `/ready` 200 with database ready). The only open coordination item is secure placement of the Yeastar credentials.
 
 ## Working product defaults
 
-These defaults are documented working assumptions grounded in prior stakeholder discussions. They are not silent guesses and remain subject to formal correction.
+These are the finalized product decisions from the prior stakeholder discussions.
 
-- D1 — **confirmed**: maintenance quotes use the standard payment/e-signature gate, with a per-client bypass for strategic/pre-arranged clients using the existing relationship-type pattern.
-- D2 — **confirmed**: KPI/reporting ownership uses the existing Kiril/Vusi/Melissa role structure and client relationship tags. A richer stakeholder map can extend the design later.
-- D3 — **confirmed**: Item 10 uses the Survey/Inspection structured-findings pattern: Fault Found, Recommendation, Immediate Fix, and Deferred Work. Technicians select remediation options; coordinators attach pricing before client visibility.
+- D1 — **final**: maintenance quotes use the standard payment/e-signature gate, with a per-client bypass for strategic/pre-arranged clients using the existing relationship-type pattern.
+- D2 — **final**: KPI/reporting ownership uses the existing Kiril/Vusi/Melissa role structure and client relationship tags. A richer stakeholder map can extend the design later.
+- D3 — **final**: Item 10 uses the Survey/Inspection structured-findings pattern: Fault Found, Recommendation, Immediate Fix, and Deferred Work. Technicians select remediation options; coordinators attach pricing before client visibility.
 
-Agents may build against these explicit defaults, but must record the assumption and stop if discovery contradicts it. Stream E has no equivalent default for undocumented API behavior.
+Agents must preserve these decisions unless a later change request explicitly supersedes them. Stream E has no equivalent default for undocumented API behavior.
 
 ## Discovery findings
 
@@ -68,7 +68,7 @@ Sequence: B1 → B2 → B3 → B4.
 
 - D-1 — **complete**, commit `e340a98`. Reused the existing seeded `staff_time_entries` table and KPI aggregation. Added authenticated time-entry creation and a Vusi workspace logger for Revenue Development, Partner Development, Project Delivery, Quotations, Strategy & Management, and Travel with weekly roll-up. No new schema.
 - D-2 — **complete**, commit `e60e52d`. Extended the existing partner-prospects growth view with the 15-engagement target, communication-based engagement count, category summary, pipeline count, and existing follow-up task actions. No new schema.
-- D-3 — **unblocked, not started**. Near-completion testimonial/referral trigger.
+- D-3 — **complete**, current commit. Completed inspections linked to projects automatically create an idempotent, project-scoped testimonial/referral follow-up task due in seven days. Completed projects also expose a protected staff trigger for workflows that bypass inspection completion. No new schema; existing task board, embeddings, and audit trail are reused. Discovery found no existing project-status mutation route, so the inspection completion boundary plus explicit staff fallback are the real integration points. Notification is internal task workflow only; no client message is sent automatically.
 - D-4 — **complete**, commits `434fcca` and `83a8ff2`. Capability checklist UI reuses the existing tasks infrastructure with `source = 'capability_checklist'`; no new schema.
 
 ## Stream E — Yeastar VoIP
@@ -90,7 +90,7 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 | Agent | Assignment | Status |
 |---|---|---|
 | Agent 1 | B2 → B4 | Active B-stream owner |
-| Agent 2 | D-3 | Unblocked, not started |
+| Agent 2 | C1 / D | C1 and Stream D complete |
 | Agent 3 | Yeastar discovery → E1–E8 | Blocked pending API/PABX details |
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.

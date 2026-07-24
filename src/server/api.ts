@@ -538,6 +538,56 @@ async function ensureTaskBoard(
   return { boardId, stages: stageRows.rows };
 }
 
+async function ensureTestimonialReferralTask(
+  client: pg.Pool | pg.PoolClient,
+  projectId: string,
+  actorId: string,
+) {
+  const project = await client.query(
+    `SELECT id, name, organization_id, owner_id, status
+     FROM projects
+     WHERE id = $1`,
+    [projectId],
+  );
+  if (!project.rows[0]) return { created: false, taskId: null, reason: "project_not_found" };
+
+  const existing = await client.query(
+    `SELECT id
+     FROM tasks
+     WHERE project_id = $1 AND source = 'testimonial_referral_trigger'
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [projectId],
+  );
+  if (existing.rows[0]) {
+    return { created: false, taskId: existing.rows[0].id, reason: "already_triggered" };
+  }
+
+  const board = await ensureTaskBoard(client, `${project.rows[0].name} Board`, projectId);
+  const backlog = board.stages.find((stage) => stage.name === "Backlog") ?? board.stages[0];
+  const result = await client.query(
+    `INSERT INTO tasks (
+      board_id, stage_id, project_id, organization_id, owner_id, title, description,
+      priority, due_at, source
+     )
+     VALUES ($1, $2, $3, $4, COALESCE($5, $6), $7, $8, 'medium', now() + interval '7 days',
+       'testimonial_referral_trigger')
+     RETURNING id`,
+    [
+      board.boardId,
+      backlog.id,
+      project.rows[0].id,
+      project.rows[0].organization_id,
+      project.rows[0].owner_id,
+      actorId,
+      `Capture testimonial and referral for ${project.rows[0].name}`,
+      "Invite the client to share a testimonial and ask whether they can refer STI Risk to a suitable contact. Record the outcome in the client activity timeline.",
+    ],
+  );
+  await refreshTaskEmbedding(client, result.rows[0].id);
+  return { created: true, taskId: result.rows[0].id, reason: "created" };
+}
+
 async function audit(
   client: pg.Pool | pg.PoolClient,
   action: string,
@@ -4562,6 +4612,39 @@ async function projects(request: Request) {
     LIMIT 100
   `);
   return json({ projects: rows.rows });
+}
+
+async function triggerTestimonialReferral(request: Request, projectId: string) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  if (request.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
+
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await ensureTestimonialReferralTask(client, projectId, auth.user.id);
+    if (result.reason === "project_not_found") {
+      await client.query("ROLLBACK");
+      return json({ error: "Project not found" }, { status: 404 });
+    }
+    await audit(
+      client,
+      result.created
+        ? "trigger_testimonial_referral_capture"
+        : "confirm_testimonial_referral_capture",
+      "project",
+      projectId,
+      { taskId: result.taskId, reason: result.reason },
+      auth.user,
+    );
+    await client.query("COMMIT");
+    return json({ ok: true, ...result });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function hasClientSignoffForContext(
@@ -13204,9 +13287,29 @@ async function completeInspection(request: Request, inspectionId: string) {
         [inspectionId, signature.id],
       );
     }
-    await audit(client, "complete_inspection", "inspection", inspectionId, rollup, auth.user);
+    let testimonialReferral = null;
+    const workItem = inspection.work_item_id
+      ? await client.query("SELECT project_id FROM work_items WHERE id = $1", [
+          inspection.work_item_id,
+        ])
+      : null;
+    if (workItem?.rows[0]?.project_id) {
+      testimonialReferral = await ensureTestimonialReferralTask(
+        client,
+        workItem.rows[0].project_id,
+        auth.user.id,
+      );
+    }
+    await audit(
+      client,
+      "complete_inspection",
+      "inspection",
+      inspectionId,
+      { ...rollup, testimonialReferral },
+      auth.user,
+    );
     await client.query("COMMIT");
-    return json({ ok: true, inspection: completed.rows[0], signature });
+    return json({ ok: true, inspection: completed.rows[0], signature, testimonialReferral });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -15482,6 +15585,11 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return whatsappApprovedUserDetail(request, whatsappApprovalMatch[1]);
     if (path === "/api/projects" && (request.method === "GET" || request.method === "POST"))
       return projects(request);
+    const testimonialReferralMatch = path.match(
+      /^\/api\/projects\/([^/]+)\/testimonial-referral-trigger$/,
+    );
+    if (testimonialReferralMatch?.[1] && request.method === "POST")
+      return triggerTestimonialReferral(request, testimonialReferralMatch[1]);
     if (path === "/api/billing/invoices" && (request.method === "GET" || request.method === "POST"))
       return invoices(request);
     if (request.method === "GET" && path === "/api/billing/payment-release")

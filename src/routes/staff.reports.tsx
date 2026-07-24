@@ -12,6 +12,12 @@ type ReportData = {
   sources: { source: string; deals: number }[];
   months: { month: string; deals: number; value_cents: number }[];
   owners: { name: string | null; deals: number; value_cents: number }[];
+  kpis: {
+    revenue: { quoted_value_cents: number; invoiced_value_cents: number; collected_value_cents: number };
+    opportunities: { count: number; value_cents: number };
+    quotations: { issued: number; issued_value_cents: number; won: number; decided: number; win_rate: number | null };
+    serviceDelivery: { open: number; completed: number; total: number; csat: number | null; csatStatus: string };
+  };
 };
 
 function money(cents: number) {
@@ -114,6 +120,19 @@ function Reports() {
         </div>
       </div>
 
+      <section className="space-y-3">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Management KPIs</div>
+          <h2 className="text-lg font-bold">Commercial and service delivery</h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard label="Collected" value={money(data?.kpis.revenue.collected_value_cents ?? 0)} detail={`Invoiced ${money(data?.kpis.revenue.invoiced_value_cents ?? 0)}`} />
+          <MetricCard label="Open opportunities" value={data?.kpis.opportunities.count ?? 0} detail={money(data?.kpis.opportunities.value_cents ?? 0)} />
+          <MetricCard label="Quote win rate" value={data?.kpis.quotations.win_rate == null ? "—" : `${Math.round(data.kpis.quotations.win_rate * 100)}%`} detail={`${data?.kpis.quotations.issued ?? 0} issued · ${money(data?.kpis.quotations.issued_value_cents ?? 0)}`} />
+          <MetricCard label="Service delivery" value={data?.kpis.serviceDelivery.completed ?? 0} detail={`${data?.kpis.serviceDelivery.open ?? 0} open · CSAT not captured`} />
+        </div>
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-lg border border-border/60 bg-surface p-5">
           <div className="flex items-center justify-between">
@@ -200,6 +219,16 @@ function Reports() {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function MetricCard({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+  return (
+    <div className="rounded-lg border border-border/60 bg-surface p-5">
+      <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
+      <div className="mt-2 text-2xl font-bold">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
     </div>
   );
 }

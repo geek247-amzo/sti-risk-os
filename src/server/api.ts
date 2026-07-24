@@ -8817,46 +8817,74 @@ async function reportsSummary(request: Request) {
   const auth = await requireUser(request);
   if (auth.response) return auth.response;
 
-  const pipeline = await getPool().query(`
+  const pool = getPool();
+  const [pipeline, statuses, sources, months, owners, revenue, opportunities, quotations, serviceDelivery] = await Promise.all([
+    pool.query(`
     SELECT s.name, count(d.id)::int AS deals, COALESCE(sum(d.value_cents)::int, 0) AS value_cents
     FROM pipeline_stages s
     LEFT JOIN deals d ON d.stage_id = s.id
     GROUP BY s.id
     HAVING count(d.id) > 0
     ORDER BY s.position
-  `);
-
-  const statuses = await getPool().query(`
+  `),
+    pool.query(`
     SELECT status, count(*)::int AS deals, COALESCE(sum(value_cents)::int, 0) AS value_cents
     FROM deals
     GROUP BY status
     ORDER BY deals DESC
-  `);
-
-  const sources = await getPool().query(`
+  `),
+    pool.query(`
     SELECT source, count(*)::int AS deals
     FROM deals
     GROUP BY source
     ORDER BY deals DESC
-  `);
-
-  const months = await getPool().query(`
+  `),
+    pool.query(`
     SELECT to_char(date_trunc('month', created_at), 'Mon YYYY') AS month,
       count(*)::int AS deals,
       COALESCE(sum(value_cents)::int, 0) AS value_cents
     FROM deals
     GROUP BY date_trunc('month', created_at)
     ORDER BY date_trunc('month', created_at)
-  `);
-
-  const owners = await getPool().query(`
+  `),
+    pool.query(`
     SELECT u.name, count(d.id)::int AS deals, COALESCE(sum(d.value_cents)::int, 0) AS value_cents
     FROM deals d
     LEFT JOIN app_users u ON u.id = d.owner_id
     GROUP BY u.name
     ORDER BY deals DESC
     LIMIT 10
-  `);
+  `),
+    pool.query(`
+      SELECT
+        COALESCE((SELECT sum(total_value_cents)::int FROM quotes WHERE status IN ('sent_to_client', 'accepted')), 0) AS quoted_value_cents,
+        COALESCE((SELECT sum(total_cents)::int FROM invoices WHERE status <> 'void'), 0) AS invoiced_value_cents,
+        COALESCE((SELECT sum(amount_cents)::int FROM invoice_payments), 0) AS collected_value_cents
+    `),
+    pool.query(`
+      SELECT count(*)::int AS count, COALESCE(sum(value_cents)::int, 0) AS value_cents
+      FROM deals
+      WHERE status NOT IN ('won', 'lost', 'cancelled')
+    `),
+    pool.query(`
+      SELECT
+        count(*) FILTER (WHERE status IN ('sent_to_client', 'accepted', 'rejected'))::int AS issued,
+        COALESCE(sum(total_value_cents) FILTER (WHERE status IN ('sent_to_client', 'accepted', 'rejected'))::int, 0) AS issued_value_cents,
+        count(*) FILTER (WHERE status = 'accepted')::int AS won,
+        count(*) FILTER (WHERE status IN ('accepted', 'rejected'))::int AS decided
+      FROM quotes
+    `),
+    pool.query(`
+      SELECT
+        count(*) FILTER (WHERE status NOT IN ('complete', 'invoiced', 'cancelled'))::int AS open,
+        count(*) FILTER (WHERE status IN ('complete', 'invoiced'))::int AS completed,
+        count(*)::int AS total
+      FROM work_items
+    `),
+  ]);
+
+  const quoteMetrics = quotations.rows[0] ?? {};
+  const serviceMetrics = serviceDelivery.rows[0] ?? {};
 
   return json({
     pipeline: pipeline.rows,
@@ -8864,6 +8892,17 @@ async function reportsSummary(request: Request) {
     sources: sources.rows,
     months: months.rows,
     owners: owners.rows,
+    kpis: {
+      revenue: revenue.rows[0] ?? { quoted_value_cents: 0, invoiced_value_cents: 0, collected_value_cents: 0 },
+      opportunities: opportunities.rows[0] ?? { count: 0, value_cents: 0 },
+      quotations: {
+        ...quoteMetrics,
+        win_rate: Number(quoteMetrics.decided ?? 0) > 0
+          ? Number(quoteMetrics.won ?? 0) / Number(quoteMetrics.decided)
+          : null,
+      },
+      serviceDelivery: { ...serviceMetrics, csat: null, csatStatus: "not_available_in_schema" },
+    },
   });
 }
 

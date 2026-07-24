@@ -14,7 +14,7 @@ Active: B2 — KPI drill-down UI.
 
 Queued: B3 — automated management reporting; B4 — PDF/Excel export.
 
-Unblocked but not started: D-1/D-2/D-3. C1 is complete.
+Unblocked but not started: D-2/D-3. C1 and D-1 are complete.
 
 Blocked: Stream E pending Yeastar API/auth and PABX details.
 
@@ -66,7 +66,7 @@ Sequence: B1 → B2 → B3 → B4.
 
 ## Stream D — Operational tracking
 
-- D-1 — **unblocked, not started**. Daily time tracking across Categories A–F with Friday roll-up.
+- D-1 — **complete**, commit `e340a98`. Reused the existing seeded `staff_time_entries` table and KPI aggregation. Added authenticated time-entry creation and a Vusi workspace logger for Revenue Development, Partner Development, Project Delivery, Quotations, Strategy & Management, and Travel with weekly roll-up. No new schema.
 - D-2 — **unblocked, not started**. Partner development pipeline and 15-engagement target.
 - D-3 — **unblocked, not started**. Near-completion testimonial/referral trigger.
 - D-4 — **complete**, commits `434fcca` and `83a8ff2`. Capability checklist UI reuses the existing tasks infrastructure with `source = 'capability_checklist'`; no new schema.
@@ -90,7 +90,7 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 | Agent | Assignment | Status |
 |---|---|---|
 | Agent 1 | B2 → B4 | Active B-stream owner |
-| Agent 2 | D-1/D-2/D-3 | Unblocked, not started |
+| Agent 2 | D-2/D-3 | Unblocked, not started |
 | Agent 3 | Yeastar discovery → E1–E8 | Blocked pending API/PABX details |
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.

@@ -37,6 +37,16 @@ type PaymentRelease = {
   release_reason: string;
   release_ready: boolean;
 };
+type CashFlowAlert = {
+  id: string;
+  po_number: string | null;
+  amount_cents: number;
+  due_on: string | null;
+  subcontractor_name: string;
+  work_item_title: string | null;
+  alert_type: string;
+  alert_reason: string;
+};
 
 const statusClass: Record<Invoice["status"], string> = {
   draft: "bg-surface-2 text-muted-foreground",
@@ -57,23 +67,28 @@ function money(cents: number, currency = "ZAR") {
 function Billing() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [paymentReleases, setPaymentReleases] = useState<PaymentRelease[]>([]);
+  const [cashFlowAlerts, setCashFlowAlerts] = useState<CashFlowAlert[]>([]);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
 
   async function load() {
-    const [invoiceResponse, releaseResponse] = await Promise.all([
+    const [invoiceResponse, releaseResponse, alertResponse] = await Promise.all([
       fetch("/api/billing/invoices"),
       fetch("/api/billing/payment-release"),
+      fetch("/api/billing/cash-flow-alerts"),
     ]);
-    const [invoiceBody, releaseBody] = await Promise.all([
+    const [invoiceBody, releaseBody, alertBody] = await Promise.all([
       invoiceResponse.json(),
       releaseResponse.json(),
+      alertResponse.json(),
     ]);
     if (!invoiceResponse.ok) throw new Error(invoiceBody.error ?? "Billing failed to load");
     if (!releaseResponse.ok) throw new Error(releaseBody.error ?? "Payment release view failed to load");
+    if (!alertResponse.ok) throw new Error(alertBody.error ?? "Cash-flow alerts failed to load");
     setInvoices(invoiceBody.invoices);
     setPaymentReleases(releaseBody.paymentReleases);
+    setCashFlowAlerts(alertBody.alerts ?? []);
   }
 
   useEffect(() => {
@@ -202,6 +217,26 @@ function Billing() {
           <div className="mt-2 text-2xl font-bold">{money(paid)}</div>
         </div>
       </div>
+
+      <section className="rounded-lg border border-border/60 bg-surface p-5 shadow-sm">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Cash flow</div>
+            <h2 className="mt-1 text-xl font-bold">Subcontractor alerts</h2>
+            <p className="text-sm text-muted-foreground">Internal notification-only alerts for Vusi; no work-assignment gate is applied.</p>
+          </div>
+          <span className="rounded-full bg-amber-500/15 px-3 py-1 text-sm font-semibold text-amber-500">{cashFlowAlerts.length} alert{cashFlowAlerts.length === 1 ? "" : "s"}</span>
+        </div>
+        <div className="mt-4 space-y-2">
+          {cashFlowAlerts.map((alert) => (
+            <div key={alert.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
+              <div className="font-semibold">{alert.subcontractor_name} · {money(alert.amount_cents)}</div>
+              <div className="text-muted-foreground">{alert.alert_reason}{alert.due_on ? ` · due ${alert.due_on}` : ""}{alert.work_item_title ? ` · ${alert.work_item_title}` : ""}</div>
+            </div>
+          ))}
+          {!cashFlowAlerts.length && <p className="text-sm text-muted-foreground">No configured cash-flow alerts.</p>}
+        </div>
+      </section>
 
       <section className="overflow-hidden rounded-lg border border-border/60 bg-surface">
         <div className="border-b border-border/60 p-5">

@@ -61,7 +61,7 @@ Sequence: B1 → B2 → B3 → B4.
 
 ## Stream C — Financial visibility
 
-- C1 — **discovery complete; implementation not started**. Existing data covers subcontractor rate cards, subcontractor POs, work-item links, statuses, due dates, and pending amounts. No dedicated cash-flow alert or threshold configuration model exists. Implementation should reuse existing tasks/approval patterns for threshold alerts, escalation notes, partial-payment requests, and execution-dependency warnings; no new finance model should be added until that scope is confirmed in code.
+- C1 — **in progress**. Existing data covers subcontractor rate cards, subcontractor POs, work-item links, statuses, due dates, and pending amounts. The first implementation is notification-only, internal to Vusi, configurable by balance/overdue thresholds, and does not gate work assignment. It reuses the existing billing surface; escalation tasks, partial-payment requests, and any execution gate remain separate follow-on decisions.
 - C2 — **complete**, commits `973a220` and `c1d4507`. Migration 039 added the invoice/client PO/sales order/work-item crosswalk and the payment-release view. It was deployed and live-verified. The initial PostgreSQL UUID aggregation issue was fixed before completion.
 
 ## Stream D — Operational tracking

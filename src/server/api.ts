@@ -4677,6 +4677,58 @@ async function paymentReleaseView(request: Request) {
   return json({ paymentReleases: rows.rows });
 }
 
+async function cashFlowAlerts(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const url = new URL(request.url);
+  const balanceThresholdCents = Math.max(
+    0,
+    Number(url.searchParams.get("balanceThresholdCents") ?? process.env.CASH_FLOW_ALERT_BALANCE_THRESHOLD_CENTS ?? 0),
+  );
+  const overdueDays = Math.max(
+    0,
+    Number(url.searchParams.get("overdueDays") ?? process.env.CASH_FLOW_ALERT_OVERDUE_DAYS ?? 7),
+  );
+  const rows = await getPool().query(
+    `SELECT spo.id, spo.po_number, spo.amount_cents, spo.status, spo.due_on,
+      sc.name AS subcontractor_name, wi.id AS work_item_id, wi.title AS work_item_title,
+      wi.status AS work_item_status,
+      CASE
+        WHEN spo.due_on IS NOT NULL AND spo.due_on <= CURRENT_DATE - ($2::int * INTERVAL '1 day')
+          THEN 'overdue'
+        WHEN $1::int > 0 AND spo.amount_cents >= $1::int
+          THEN 'balance_threshold'
+        ELSE 'none'
+      END AS alert_type,
+      CASE
+        WHEN spo.due_on IS NOT NULL AND spo.due_on <= CURRENT_DATE - ($2::int * INTERVAL '1 day')
+          THEN 'Subcontractor PO is overdue for payment'
+        ELSE 'Outstanding subcontractor balance exceeds the configured threshold'
+      END AS alert_reason
+     FROM subcontractor_pos spo
+     JOIN subcontractors sc ON sc.id = spo.subcontractor_id
+     LEFT JOIN work_items wi ON wi.id = spo.work_item_id
+     WHERE spo.status NOT IN ('paid', 'cancelled')
+       AND (
+         (spo.due_on IS NOT NULL AND spo.due_on <= CURRENT_DATE - ($2::int * INTERVAL '1 day'))
+         OR ($1::int > 0 AND spo.amount_cents >= $1::int)
+       )
+     ORDER BY spo.due_on ASC NULLS LAST, spo.amount_cents DESC
+     LIMIT 200`,
+    [balanceThresholdCents, overdueDays],
+  );
+  return json({
+    alerts: rows.rows,
+    policy: {
+      notificationOnly: true,
+      recipient: "vusi",
+      workAssignmentGate: false,
+      balanceThresholdCents,
+      overdueDays,
+    },
+  });
+}
+
 async function subcontractorPos(request: Request, subcontractorPoId: string) {
   const auth = await requireUser(request, ["admin", "staff"]);
   if (auth.response) return auth.response;
@@ -15364,6 +15416,8 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return invoices(request);
     if (request.method === "GET" && path === "/api/billing/payment-release")
       return paymentReleaseView(request);
+    if (request.method === "GET" && path === "/api/billing/cash-flow-alerts")
+      return cashFlowAlerts(request);
     if (request.method === "GET" && path === "/api/quote-support") return quoteSupport(request);
     if (path === "/api/quote-templates" && (request.method === "GET" || request.method === "POST"))
       return quoteTemplates(request);

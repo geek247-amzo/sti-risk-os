@@ -26,16 +26,18 @@ The repository is currently clean, synced at `9811c0e`, and production has been 
 
 These defaults are documented working assumptions grounded in prior stakeholder discussions. They are not silent guesses and remain subject to formal correction.
 
-- D1 — Maintenance quotes use the standard payment/e-signature gate by default, with a per-client bypass for strategic/pre-arranged clients using the existing relationship-type pattern.
-- D2 — KPI/reporting ownership uses the existing Kiril/Vusi/Melissa role structure and client relationship tags. A richer stakeholder map can extend the design later.
-- D3 — Item 10 uses the Survey/Inspection structured-findings pattern: Fault Found, Recommendation, Immediate Fix, and Deferred Work. Technicians select remediation options; coordinators attach pricing before client visibility.
+- D1 — **confirmed**: maintenance quotes use the standard payment/e-signature gate, with a per-client bypass for strategic/pre-arranged clients using the existing relationship-type pattern.
+- D2 — **confirmed**: KPI/reporting ownership uses the existing Kiril/Vusi/Melissa role structure and client relationship tags. A richer stakeholder map can extend the design later.
+- D3 — **confirmed**: Item 10 uses the Survey/Inspection structured-findings pattern: Fault Found, Recommendation, Immediate Fix, and Deferred Work. Technicians select remediation options; coordinators attach pricing before client visibility.
 
 Agents may build against these explicit defaults, but must record the assumption and stop if discovery contradicts it. Stream E has no equivalent default for undocumented API behavior.
 
 ## Discovery findings
 
 - D4 — `site_visits`, `evidence_files`, `service_reports`, and `work_items` exist and are linked. Media uses `file_path` and the Docker uploads volume. `capture_phase` supports before/during/after. No object-storage abstraction exists.
-- D5 — No Yeastar API, CDR, recording, webhook, or CloudMonkey integration exists. Deeper API/auth discovery is required before implementation.
+- D5 — No Yeastar API, CDR, recording, webhook, or CloudMonkey integration exists in the STI Risk repo. The supplied host is reachable; `/integration/api` serves the PBX UI and the actual API prefix is `/api/v1.0`. CDR/recording/extension endpoint families are visible, and unauthenticated calls return `TOKEN EXPIRED`. TLS serves a generic UCCPBX certificate that does not match the raw IP; pin its known SHA-256 certificate fingerprint rather than disabling verification. Authentication remains blocked until credentials are stored securely.
+
+Observed current UCCPBX certificate SHA-256 fingerprint: `1cd9ecf2f9e01e3fa0d17105b2998b80ec04f5193b60180da5e390d55fe10586`. Confirm it again before production pinning if the PBX certificate changes.
 - D6 — Inspection templates, technician capture, signatures, required photos, GPS, AI compliance checks, structured findings, report assembly, and staff UI exist. At discovery time PDF export and public delivery were missing; both are now closed by F1 and F2.
 
 ## Stream A — Progressive report assembly
@@ -105,12 +107,8 @@ F3 remains outside the split and runs continuously at stream close, then as the 
 - Deploy and verify the live container, health/readiness, database migration state, and protected routes before marking a ticket complete.
 - If discovery contradicts this backlog, stop and document the discrepancy rather than silently changing scope.
 
-## Coordination message
+## Coordination
 
-> Hi Kiril/Vusi — three product decisions are on the critical path for STI Risk OS. To keep progress moving, we've proceeded on working defaults grounded in our prior discussions — flag if any of these should change:
->
-> 1. D1 — Maintenance quote gate: applying the standard payment gate, with a bypass for strategic/pre-arranged clients via the existing relationship-type tag.
-> 2. D2 — Stakeholder mapping: building the KPI/reporting layer against the existing role structure (Kiril/Vusi/Melissa + client relationship tags) — a more detailed mapping can extend this later.
-> 3. D3 — Item 10: note types follow the Survey/Inspection structured-findings pattern; technicians see remediation options only, coordinators attach pricing before anything is client-visible.
->
-> Report assembly (item 10) and the KPI dashboard's data layer are already live on these defaults. Please confirm or correct before the reporting layer goes further.
+D1–D3 are final and no longer require a stakeholder confirmation message. Any later objection is a normal change request against shipped functionality, not a blocker.
+
+Yeastar credentials must be stored in the server secret environment before authenticated E1 discovery resumes. The raw credential values must never appear in this file, chat, logs, or commits.

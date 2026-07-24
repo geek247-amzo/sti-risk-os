@@ -14,7 +14,7 @@ Active: B2 — KPI drill-down UI.
 
 Queued: B3 — automated management reporting; B4 — PDF/Excel export.
 
-Unblocked but not started: C1 and D-1/D-2/D-3.
+Unblocked but not started: D-1/D-2/D-3. C1 is complete.
 
 Blocked: Stream E pending Yeastar API/auth and PABX details.
 
@@ -61,7 +61,7 @@ Sequence: B1 → B2 → B3 → B4.
 
 ## Stream C — Financial visibility
 
-- C1 — **in progress**. Existing data covers subcontractor rate cards, subcontractor POs, work-item links, statuses, due dates, and pending amounts. The first implementation is notification-only, internal to Vusi, configurable by balance/overdue thresholds, and does not gate work assignment. It reuses the existing billing surface; escalation tasks, partial-payment requests, and any execution gate remain separate follow-on decisions.
+- C1 — **complete**, commit `fb1e3dd`. Existing subcontractor rate cards, POs, work-item links, statuses, due dates, and pending amounts now drive configurable balance/overdue alerts in the billing surface. The shipped policy is notification-only and internal to Vusi; it does not notify subcontractors or gate work assignment. Escalation tasks, partial-payment requests, and any execution gate remain separate follow-on decisions.
 - C2 — **complete**, commits `973a220` and `c1d4507`. Migration 039 added the invoice/client PO/sales order/work-item crosswalk and the payment-release view. It was deployed and live-verified. The initial PostgreSQL UUID aggregation issue was fixed before completion.
 
 ## Stream D — Operational tracking
@@ -90,7 +90,7 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 | Agent | Assignment | Status |
 |---|---|---|
 | Agent 1 | B2 → B4 | Active B-stream owner |
-| Agent 2 | C1 and D-1/D-2/D-3 | Unblocked, not started |
+| Agent 2 | D-1/D-2/D-3 | Unblocked, not started |
 | Agent 3 | Yeastar discovery → E1–E8 | Blocked pending API/PABX details |
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.

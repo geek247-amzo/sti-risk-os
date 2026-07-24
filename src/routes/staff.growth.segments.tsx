@@ -46,6 +46,7 @@ type PartnerProspect = {
   account_type: string | null;
   owner_name: string | null;
 };
+type PartnerSummary = { target: number; prospects: number; engagements: number; categories: Array<{ category: string; count: number }> };
 
 type Campaign = { id: string; name: string; status: string };
 
@@ -63,6 +64,7 @@ function GrowthSegments() {
   const [dormant, setDormant] = useState<DormantClient[]>([]);
   const [partners, setPartners] = useState<PartnerProspect[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [partnerSummary, setPartnerSummary] = useState<PartnerSummary>({ target: 15, prospects: 0, engagements: 0, categories: [] });
   const [campaignId, setCampaignId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -98,6 +100,7 @@ function GrowthSegments() {
           setQuotes(quoteResponse.body.quoteFollowups ?? []);
           setDormant(dormantResponse.body.dormantClients ?? []);
           setPartners(partnerResponse.body.partnerProspects ?? []);
+          setPartnerSummary(partnerResponse.body.summary ?? { target: 15, prospects: 0, engagements: 0, categories: [] });
           if (campaignResponse.ok) {
             setCampaigns(campaignResponse.body.campaigns ?? []);
             setCampaignId(campaignResponse.body.campaigns?.[0]?.id ?? "");
@@ -306,6 +309,11 @@ function GrowthSegments() {
           <div className="flex items-center gap-2 border-b border-border/60 px-5 py-4">
             <Users className="h-4 w-4 text-brand-orange" />
             <h2 className="text-sm font-semibold">Partner Prospects</h2>
+          </div>
+          <div className="grid gap-3 border-b border-border/60 p-5 sm:grid-cols-3">
+            <div><div className="text-xs uppercase tracking-wider text-muted-foreground">Engagements</div><div className="mt-1 text-xl font-bold">{partnerSummary.engagements} / {partnerSummary.target}</div></div>
+            <div><div className="text-xs uppercase tracking-wider text-muted-foreground">Pipeline</div><div className="mt-1 text-xl font-bold">{partnerSummary.prospects}</div></div>
+            <div><div className="text-xs uppercase tracking-wider text-muted-foreground">Categories</div><div className="mt-1 text-sm">{partnerSummary.categories.map((item) => `${item.category}: ${item.count}`).join(" · ") || "—"}</div></div>
           </div>
           <div className="divide-y divide-border/40">
             {partners.slice(0, 8).map((item) => (

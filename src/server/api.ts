@@ -15102,7 +15102,8 @@ async function dormantClients(request: Request) {
 async function partnerProspects(request: Request) {
   const auth = await requireUser(request, ["admin", "staff", "viewer"]);
   if (auth.response) return auth.response;
-  const rows = await getPool().query(`
+  const pool = getPool();
+  const rows = await pool.query(`
     SELECT o.id, o.name, o.account_type, o.region, o.account_status, o.last_activity_at,
       (array_agg(c.id ORDER BY c.updated_at DESC) FILTER (WHERE c.id IS NOT NULL))[1] AS contact_id,
       (array_agg(c.email ORDER BY c.updated_at DESC) FILTER (WHERE c.email IS NOT NULL))[1] AS email,
@@ -15120,7 +15121,31 @@ async function partnerProspects(request: Request) {
     ORDER BY COALESCE(o.last_activity_at, o.updated_at) DESC
     LIMIT 200
   `);
-  return json({ partnerProspects: rows.rows });
+  const engagements = await pool.query(`
+    SELECT count(*)::int AS count
+    FROM communications c
+    WHERE (c.subject ILIKE '%partner%' OR c.body ILIKE '%partner%' OR c.summary ILIKE '%partner%'
+      OR c.subject ILIKE '%insurance%' OR c.body ILIKE '%insurance%' OR c.summary ILIKE '%insurance%'
+      OR c.subject ILIKE '%sprinkler%' OR c.body ILIKE '%sprinkler%' OR c.summary ILIKE '%sprinkler%'
+      OR c.subject ILIKE '%competitor%' OR c.body ILIKE '%competitor%' OR c.summary ILIKE '%competitor%')
+  `);
+  const categories = await pool.query(`
+    SELECT CASE
+      WHEN lower(COALESCE(industry, account_type, '')) LIKE '%insurance%' THEN 'Insurance'
+      WHEN lower(COALESCE(industry, account_type, '')) LIKE '%sprinkler%' THEN 'Sprinkler'
+      WHEN lower(COALESCE(industry, account_type, '')) LIKE '%competitor%'
+        OR lower(COALESCE(industry, account_type, '')) LIKE '%collaborat%' THEN 'Competitor / collaborator'
+      ELSE 'Other partner'
+    END AS category, count(*)::int AS count
+    FROM organizations
+    WHERE is_partner = true OR account_type ILIKE '%partner%' OR name ILIKE '%partner%'
+      OR industry ILIKE '%insurance%' OR industry ILIKE '%sprinkler%'
+    GROUP BY 1 ORDER BY 1
+  `);
+  return json({
+    partnerProspects: rows.rows,
+    summary: { target: 15, prospects: rows.rows.length, engagements: engagements.rows[0]?.count ?? 0, categories: categories.rows },
+  });
 }
 
 export async function handleApiRequest(request: Request): Promise<Response | null> {

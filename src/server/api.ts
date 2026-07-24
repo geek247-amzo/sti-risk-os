@@ -4447,16 +4447,20 @@ async function invoices(request: Request) {
     }
     const result = await getPool().query(
       `INSERT INTO invoices (
-        invoice_number, organization_id, project_id, deal_id, owner_id, status,
+        invoice_number, organization_id, project_id, deal_id, client_po_id, sales_order_id,
+        work_item_id, owner_id, status,
         subtotal_cents, tax_cents, total_cents, issued_on, due_on, notes
        )
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'draft'), $7, $8, $9, $10, $11, $12)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'draft'), $10, $11, $12, $13, $14, $15)
        RETURNING id`,
       [
         optionalText(body.invoiceNumber),
         body.organizationId ?? null,
         resolvedProjectId,
         dealId,
+        optionalText(body.clientPoId),
+        optionalText(body.salesOrderId),
+        optionalText(body.workItemId),
         auth.user.id,
         optionalText(body.status),
         totalCents,
@@ -4473,15 +4477,84 @@ async function invoices(request: Request) {
 
   const rows = await getPool().query(`
     SELECT i.id, i.invoice_number, i.status, i.currency, i.total_cents, i.issued_on, i.due_on,
-      i.paid_at, o.name AS organization_name, p.name AS project_name, d.title AS deal_title
+      i.paid_at, i.client_po_id, i.sales_order_id, i.work_item_id,
+      o.name AS organization_name, p.name AS project_name, d.title AS deal_title,
+      cp.po_number AS client_po_number, so.sales_order_number, wi.title AS work_item_title
     FROM invoices i
     LEFT JOIN organizations o ON o.id = i.organization_id
     LEFT JOIN projects p ON p.id = i.project_id
     LEFT JOIN deals d ON d.id = i.deal_id
+    LEFT JOIN client_pos cp ON cp.id = i.client_po_id
+    LEFT JOIN sales_orders so ON so.id = i.sales_order_id
+    LEFT JOIN work_items wi ON wi.id = i.work_item_id
     ORDER BY i.due_on ASC NULLS LAST, i.created_at DESC
     LIMIT 100
   `);
   return json({ invoices: rows.rows });
+}
+
+async function paymentReleaseView(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const rows = await getPool().query(`
+    SELECT spo.id, spo.po_number, spo.status, spo.amount_cents, spo.due_on,
+      sc.name AS subcontractor_name,
+      wi.id AS work_item_id, wi.title AS work_item_title,
+      p.id AS project_id, p.name AS project_name,
+      cp.po_number AS client_po_number, cp.status AS client_po_status,
+      so.sales_order_number, so.status AS sales_order_status,
+      inv.id AS invoice_id, inv.invoice_number, inv.status AS invoice_status,
+      inv.total_cents AS invoice_total_cents,
+      CASE
+        WHEN spo.status NOT IN ('complete', 'invoiced') THEN 'Job not complete'
+        WHEN inv.id IS NULL THEN 'No linked client invoice'
+        WHEN inv.status <> 'paid' THEN 'Client invoice not paid'
+        ELSE 'Ready for release'
+      END AS release_reason,
+      (
+        spo.status IN ('complete', 'invoiced')
+        AND inv.status = 'paid'
+      ) AS release_ready
+    FROM subcontractor_pos spo
+    JOIN subcontractors sc ON sc.id = spo.subcontractor_id
+    LEFT JOIN work_items wi ON wi.id = spo.work_item_id
+    LEFT JOIN projects p ON p.id = spo.project_id
+    LEFT JOIN LATERAL (
+      SELECT cp.*
+      FROM client_pos cp
+      WHERE cp.id = spo.client_po_id
+         OR (spo.client_po_id IS NULL AND cp.work_item_id = spo.work_item_id)
+         OR (spo.client_po_id IS NULL AND spo.work_item_id IS NULL AND cp.project_id = spo.project_id)
+      ORDER BY (cp.id = spo.client_po_id) DESC, cp.updated_at DESC
+      LIMIT 1
+    ) cp ON true
+    LEFT JOIN LATERAL (
+      SELECT so.*
+      FROM sales_orders so
+      WHERE (so.work_item_id = spo.work_item_id)
+         OR (spo.work_item_id IS NULL AND so.project_id = spo.project_id)
+         OR (cp.id IS NOT NULL AND so.client_po_id = cp.id)
+      ORDER BY (cp.id IS NOT NULL AND so.client_po_id = cp.id) DESC, so.updated_at DESC
+      LIMIT 1
+    ) so ON true
+    LEFT JOIN LATERAL (
+      SELECT i.*
+      FROM invoices i
+      WHERE i.work_item_id = spo.work_item_id
+         OR i.project_id = spo.project_id
+         OR i.client_po_id = cp.id
+         OR i.sales_order_id = so.id
+      ORDER BY
+        (i.work_item_id = spo.work_item_id) DESC,
+        (i.client_po_id = cp.id) DESC,
+        i.updated_at DESC
+      LIMIT 1
+    ) inv ON true
+    WHERE spo.status NOT IN ('paid', 'cancelled')
+    ORDER BY release_ready DESC, spo.due_on ASC NULLS LAST, spo.created_at DESC
+    LIMIT 200
+  `);
+  return json({ paymentReleases: rows.rows });
 }
 
 async function subcontractorPos(request: Request, subcontractorPoId: string) {
@@ -15070,6 +15143,8 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return projects(request);
     if (path === "/api/billing/invoices" && (request.method === "GET" || request.method === "POST"))
       return invoices(request);
+    if (request.method === "GET" && path === "/api/billing/payment-release")
+      return paymentReleaseView(request);
     if (request.method === "GET" && path === "/api/quote-support") return quoteSupport(request);
     if (path === "/api/quote-templates" && (request.method === "GET" || request.method === "POST"))
       return quoteTemplates(request);

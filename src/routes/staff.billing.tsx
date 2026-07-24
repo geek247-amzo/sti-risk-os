@@ -19,6 +19,24 @@ type Invoice = {
   project_name: string | null;
   deal_title: string | null;
 };
+type PaymentRelease = {
+  id: string;
+  po_number: string | null;
+  status: string;
+  amount_cents: number;
+  due_on: string | null;
+  subcontractor_name: string;
+  work_item_title: string | null;
+  project_name: string | null;
+  client_po_number: string | null;
+  client_po_status: string | null;
+  sales_order_number: string | null;
+  sales_order_status: string | null;
+  invoice_number: string | null;
+  invoice_status: string | null;
+  release_reason: string;
+  release_ready: boolean;
+};
 
 const statusClass: Record<Invoice["status"], string> = {
   draft: "bg-surface-2 text-muted-foreground",
@@ -38,15 +56,24 @@ function money(cents: number, currency = "ZAR") {
 
 function Billing() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [paymentReleases, setPaymentReleases] = useState<PaymentRelease[]>([]);
   const [showNewInvoice, setShowNewInvoice] = useState(false);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
 
   async function load() {
-    const response = await fetch("/api/billing/invoices");
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error ?? "Billing failed to load");
-    setInvoices(body.invoices);
+    const [invoiceResponse, releaseResponse] = await Promise.all([
+      fetch("/api/billing/invoices"),
+      fetch("/api/billing/payment-release"),
+    ]);
+    const [invoiceBody, releaseBody] = await Promise.all([
+      invoiceResponse.json(),
+      releaseResponse.json(),
+    ]);
+    if (!invoiceResponse.ok) throw new Error(invoiceBody.error ?? "Billing failed to load");
+    if (!releaseResponse.ok) throw new Error(releaseBody.error ?? "Payment release view failed to load");
+    setInvoices(invoiceBody.invoices);
+    setPaymentReleases(releaseBody.paymentReleases);
   }
 
   useEffect(() => {
@@ -175,6 +202,57 @@ function Billing() {
           <div className="mt-2 text-2xl font-bold">{money(paid)}</div>
         </div>
       </div>
+
+      <section className="overflow-hidden rounded-lg border border-border/60 bg-surface">
+        <div className="border-b border-border/60 p-5">
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">Subcontractor payment control</div>
+          <h2 className="mt-1 text-xl font-bold">Payment release queue</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Release is ready only when the subcontractor work is complete or invoiced and the linked client invoice is paid.
+          </p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="bg-surface-2 text-left text-xs uppercase tracking-wider text-muted-foreground">
+              <tr>
+                <th className="px-4 py-3">Subcontractor / job</th>
+                <th className="px-4 py-3">Client chain</th>
+                <th className="px-4 py-3">Sub PO</th>
+                <th className="px-4 py-3">Decision</th>
+                <th className="px-4 py-3 text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/40">
+              {paymentReleases.map((release) => (
+                <tr key={release.id}>
+                  <td className="px-4 py-3">
+                    <div className="font-medium">{release.subcontractor_name}</div>
+                    <div className="text-xs text-muted-foreground">{release.work_item_title ?? release.project_name ?? "Unlinked job"}</div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted-foreground">
+                    <div>PO: {release.client_po_number ?? "Not linked"}</div>
+                    <div>SO: {release.sales_order_number ?? "Not linked"}</div>
+                    <div>Invoice: {release.invoice_number ?? "Not linked"}{release.invoice_status ? ` · ${release.invoice_status}` : ""}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div>{release.po_number ?? "No number"}</div>
+                    <div className="text-xs uppercase text-muted-foreground">{release.status}</div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${release.release_ready ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"}`}>
+                      {release.release_reason}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right font-semibold text-brand-orange">{money(release.amount_cents)}</td>
+                </tr>
+              ))}
+              {paymentReleases.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No unpaid subcontractor POs in the release queue.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       <div className="overflow-hidden rounded-lg border border-border/60 bg-surface">
         <table className="w-full text-sm">

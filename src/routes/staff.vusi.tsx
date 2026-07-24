@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import {
   AlertTriangle,
   Bot,
@@ -41,6 +41,7 @@ type Invoice = {
   total_cents: number;
   organization_name: string | null;
 };
+type TimeAllocation = { category_label: string; activity_label: string; hours: number };
 
 function money(cents: number) {
   return new Intl.NumberFormat("en-ZA", {
@@ -54,26 +55,33 @@ function VusiWorkspace() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [timeAllocation, setTimeAllocation] = useState<TimeAllocation[]>([]);
+  const [timeForm, setTimeForm] = useState({ categoryKey: "project_delivery", activityLabel: "", hours: "" });
+  const [timeError, setTimeError] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
-      const [quotesResponse, projectsResponse, invoicesResponse] = await Promise.all([
+      const [quotesResponse, projectsResponse, invoicesResponse, kpiResponse] = await Promise.all([
         fetch("/api/quotes"),
         fetch("/api/projects"),
         fetch("/api/billing/invoices"),
+        fetch("/api/staff/kpi-dashboard"),
       ]);
-      const [quotesBody, projectsBody, invoicesBody] = await Promise.all([
+      const [quotesBody, projectsBody, invoicesBody, kpiBody] = await Promise.all([
         quotesResponse.json(),
         projectsResponse.json(),
         invoicesResponse.json(),
+        kpiResponse.json(),
       ]);
       if (!quotesResponse.ok) throw new Error(quotesBody.error ?? "Quotes failed to load");
       if (!projectsResponse.ok) throw new Error(projectsBody.error ?? "Work failed to load");
       if (!invoicesResponse.ok) throw new Error(invoicesBody.error ?? "Finance failed to load");
+      if (!kpiResponse.ok) throw new Error(kpiBody.error ?? "KPI data failed to load");
       setQuotes(quotesBody.quotes ?? []);
       setProjects(projectsBody.projects ?? []);
       setInvoices(invoicesBody.invoices ?? []);
+      setTimeAllocation(kpiBody.timeAllocation ?? []);
     }
 
     load().catch((err) => setError(err instanceof Error ? err.message : "Workspace failed"));
@@ -143,6 +151,25 @@ function VusiWorkspace() {
     ];
   }, [invoices, projects, quotes]);
 
+  async function addTimeEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setTimeError("");
+    const response = await fetch("/api/staff/kpi-dashboard", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ...timeForm, hours: Number(timeForm.hours) }),
+    });
+    const body = await response.json();
+    if (!response.ok) {
+      setTimeError(body.error ?? "Unable to save time entry");
+      return;
+    }
+    setTimeForm((current) => ({ ...current, activityLabel: "", hours: "" }));
+    const refresh = await fetch("/api/staff/kpi-dashboard");
+    const refreshBody = await refresh.json();
+    setTimeAllocation(refreshBody.timeAllocation ?? []);
+  }
+
   const nextQuotes = quotes
     .filter((quote) => quote.status !== "accepted" && quote.status !== "rejected")
     .slice(0, 6);
@@ -208,6 +235,32 @@ function VusiWorkspace() {
           taskMode
         />
       </div>
+
+      <section className="rounded-xl border border-border/60 bg-surface p-5 shadow-sm">
+        <div className="mb-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">D-1 · This week</div>
+          <h2 className="text-xl font-bold">Daily time tracking</h2>
+          <p className="text-sm text-muted-foreground">Log activity against the existing Category A–F structure; entries roll up weekly.</p>
+        </div>
+        <form className="grid gap-3 md:grid-cols-[1fr_2fr_120px_auto]" onSubmit={addTimeEntry}>
+          <select className="rounded-md border border-border bg-background px-3 py-2 text-sm" value={timeForm.categoryKey} onChange={(event) => setTimeForm({ ...timeForm, categoryKey: event.target.value })}>
+            <option value="revenue_development">Revenue Development</option>
+            <option value="partner_development">Partner Development</option>
+            <option value="project_delivery">Project Delivery</option>
+            <option value="quotations">Quotations</option>
+            <option value="strategy_management">Strategy &amp; Management</option>
+            <option value="travel">Travel</option>
+          </select>
+          <input className="rounded-md border border-border bg-background px-3 py-2 text-sm" placeholder="Activity" value={timeForm.activityLabel} onChange={(event) => setTimeForm({ ...timeForm, activityLabel: event.target.value })} required />
+          <input className="rounded-md border border-border bg-background px-3 py-2 text-sm" type="number" min="0.1" max="24" step="0.1" placeholder="Hours" value={timeForm.hours} onChange={(event) => setTimeForm({ ...timeForm, hours: event.target.value })} required />
+          <button className="rounded-md bg-brand-orange px-4 py-2 text-sm font-semibold text-primary-foreground" type="submit">Log time</button>
+        </form>
+        {timeError && <p className="mt-2 text-sm text-destructive">{timeError}</p>}
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {timeAllocation.map((entry) => <div key={`${entry.category_label}-${entry.activity_label}`} className="rounded-lg border border-border bg-background p-3 text-sm"><div className="font-medium">{entry.category_label}</div><div className="text-muted-foreground">{entry.activity_label} · {entry.hours}h</div></div>)}
+          {!timeAllocation.length && <p className="text-sm text-muted-foreground">No time logged this week.</p>}
+        </div>
+      </section>
     </div>
   );
 }

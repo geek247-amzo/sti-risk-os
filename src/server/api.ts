@@ -3567,6 +3567,51 @@ async function staffKpiDashboard(request: Request) {
   const auth = await requireUser(request, ["admin", "staff"]);
   if (auth.response) return auth.response;
 
+  if (request.method === "POST") {
+    const body = asRecord(await readJson(request));
+    const category = requireOneOf(body.categoryKey, "Category", [
+      "revenue_development",
+      "partner_development",
+      "project_delivery",
+      "quotations",
+      "strategy_management",
+      "travel",
+    ] as const);
+    const labels: Record<string, string> = {
+      revenue_development: "Revenue Development",
+      partner_development: "Partner Development",
+      project_delivery: "Project Delivery",
+      quotations: "Quotations",
+      strategy_management: "Strategy & Management",
+      travel: "Travel",
+    };
+    const hours = optionalNumber(body.hours);
+    if (hours === null || hours <= 0 || hours > 24)
+      return json({ error: "Hours must be greater than 0 and no more than 24" }, { status: 400 });
+    const profile = await getPool().query(
+      "SELECT id FROM staff_kpi_profiles WHERE user_id = $1 AND active = true LIMIT 1",
+      [auth.user.id],
+    );
+    if (!profile.rows[0]) return json({ error: "No KPI profile exists for this user" }, { status: 409 });
+    const entryDate = optionalText(body.entryDate) ?? new Date().toISOString().slice(0, 10);
+    const result = await getPool().query(
+      `INSERT INTO staff_time_entries (profile_id, user_id, category_key, category_label, activity_label, hours, entry_date, source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::date, 'manual')
+       RETURNING id, category_key, category_label, activity_label, hours, entry_date, created_at`,
+      [
+        profile.rows[0].id,
+        auth.user.id,
+        category,
+        labels[category],
+        requireText(body.activityLabel, "Activity").slice(0, 200),
+        hours,
+        entryDate,
+      ],
+    );
+    await audit(getPool(), "create_staff_time_entry", "staff_time_entry", result.rows[0].id, {}, auth.user);
+    return json({ ok: true, entry: result.rows[0] }, { status: 201 });
+  }
+
   const summary = await getPool().query(`
     WITH won AS (
       SELECT COALESCE(sum(d.value_cents)::int, 0) AS cents
@@ -15373,7 +15418,7 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
     const approvalDecisionMatch = path.match(/^\/api\/steve\/approvals\/([^/]+)$/);
     if (request.method === "PATCH" && approvalDecisionMatch?.[1])
       return approvalRequestDecision(request, approvalDecisionMatch[1]);
-    if (request.method === "GET" && path === "/api/staff/kpi-dashboard")
+    if (path === "/api/staff/kpi-dashboard" && (request.method === "GET" || request.method === "POST"))
       return staffKpiDashboard(request);
     if (path === "/api/capability-checklist" && (request.method === "GET" || request.method === "POST"))
       return capabilityChecklist(request);

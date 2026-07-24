@@ -16,7 +16,7 @@ Queued: B3 — automated management reporting; B4 — PDF/Excel export.
 
 Unblocked and not started: none in Stream D. C1, D-1, D-2, and D-3 are complete.
 
-Active: E1 discovery complete; E2 recording/CDR ingestion is next.
+Active: E2 recording/CDR ingestion discovery; implementation follows the confirmed API shape.
 
 Deferred: F3 final verification, until the remaining streams close.
 
@@ -78,7 +78,7 @@ E1 discovery is complete. The PBX is reachable and authenticated with the server
 Confirmed sequence: E1 authentication → E2 recordings/CDR → E3 Gemini 2.5 Flash transcription → E4 customer matching/tagging rules → E5/E6 staff call and tagging views → E7 customer call history → E8 transcript RAG indexing.
 
 - E1 — **discovery complete**, commit `546f08e`. Server env vars are present, token exchange succeeds, access-token expiry is 30 minutes, refresh-token expiry is 24 hours, and low-risk authenticated calls succeed. No credentials are committed.
-- E2 — **next**. Implement scheduled/pull ingestion against the confirmed `cdr` and `recording` OpenAPI endpoints. Webhook/push behavior is not assumed; verify it against the PBX API surface before implementation.
+- E2 — **discovery complete, implementation next**. Yeastar documents webhook/event push for call records, but this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`; therefore ingestion must support scheduled pull/reconciliation first, with webhook delivery treated as an optional optimization only after portal configuration is confirmed. The recording list is live and currently reports 20 recordings. Retention is not a fixed API guarantee: PBX auto-cleanup removes recordings by configured preservation days or storage threshold, so the polling interval and initial backfill window must be configurable and the deployed PBX retention setting must be confirmed before production scheduling.
 
 Do not guess push/pull behavior, authentication, number matching, personal-call retention, or tagging permissions.
 

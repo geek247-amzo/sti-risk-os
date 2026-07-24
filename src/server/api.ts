@@ -3841,6 +3841,70 @@ async function staffKpiDashboard(request: Request) {
   });
 }
 
+async function capabilityChecklist(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+
+  if (request.method === "GET") {
+    const [objective, tasks] = await Promise.all([
+      getPool().query(
+        `SELECT o.objective_key, o.title, o.success_measure
+         FROM staff_kpi_objectives o
+         JOIN staff_kpi_profiles p ON p.id = o.profile_id
+         JOIN app_users u ON u.id = p.user_id
+         WHERE u.email = 'vusi@stirisk.co.za'
+           AND o.objective_key = 'service_installation_capability'
+         LIMIT 1`,
+      ),
+      getPool().query(
+        `SELECT t.id, t.title, t.description, t.status, t.priority, t.due_at,
+           t.completed_at, t.owner_id, u.name AS owner_name, t.created_at, t.updated_at
+         FROM tasks t
+         LEFT JOIN app_users u ON u.id = t.owner_id
+         WHERE t.source = 'capability_checklist'
+         ORDER BY t.status = 'done', t.due_at ASC NULLS LAST, t.updated_at DESC`,
+      ),
+    ]);
+    return json({ objective: objective.rows[0] ?? null, items: tasks.rows });
+  }
+
+  const body = await readJson(request);
+  const title = requireText(body.title, "Checklist item title");
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const board = await ensureTaskBoard(client);
+    const fallbackStage =
+      board.stages.find((stage) => stage.name === "Backlog") ?? board.stages[0];
+    const result = await client.query(
+      `INSERT INTO tasks (
+        board_id, stage_id, owner_id, title, description, priority, status, due_at, source
+       )
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'medium'), COALESCE($7, 'open'), $8, 'capability_checklist')
+       RETURNING id`,
+      [
+        board.boardId,
+        fallbackStage.id,
+        auth.user.id,
+        title,
+        optionalText(body.description),
+        optionalText(body.priority),
+        optionalText(body.status),
+        optionalText(body.dueAt),
+      ],
+    );
+    await refreshTaskEmbedding(client, result.rows[0].id);
+    await audit(getPool(), "create_capability_checklist_item", "task", result.rows[0].id, {}, auth.user);
+    await client.query("COMMIT");
+    return json({ ok: true, itemId: result.rows[0].id }, { status: 201 });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function workBoard(request: Request) {
   const auth = await requireUser(request);
   if (auth.response) return auth.response;
@@ -15106,6 +15170,8 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return approvalRequestDecision(request, approvalDecisionMatch[1]);
     if (request.method === "GET" && path === "/api/staff/kpi-dashboard")
       return staffKpiDashboard(request);
+    if (path === "/api/capability-checklist" && (request.method === "GET" || request.method === "POST"))
+      return capabilityChecklist(request);
     if (request.method === "GET" && path === "/api/staff/chat/status")
       return staffChatStatus(request);
     if (request.method === "GET" && path === "/api/staff/chat/entities")

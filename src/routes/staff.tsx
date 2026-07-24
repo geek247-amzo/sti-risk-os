@@ -41,6 +41,13 @@ const nav = [
     exact: true,
     group: "Operate",
   },
+  {
+    to: "/staff/capability",
+    label: "Capability Checklist",
+    icon: Wrench,
+    exact: true,
+    group: "Operate",
+  },
   { to: "/staff/clients", label: "Clients", icon: Building2, exact: true, group: "Operate" },
   { to: "/staff/work", label: "Work", icon: FolderKanban, exact: false, group: "Operate" },
   { to: "/staff/quotes", label: "Quotes", icon: FileSignature, exact: false, group: "Operate" },

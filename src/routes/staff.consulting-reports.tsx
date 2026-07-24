@@ -23,6 +23,7 @@ type Report = {
   site: { name: string };
   container: { name: string };
   project: { name: string } | null;
+  workItem: { title: string; status: string; scope: string | null; work_type: string | null } | null;
   stage: {
     stageType: string;
     tier: string;
@@ -50,8 +51,23 @@ type Report = {
     file_name: string;
     mime_type: string | null;
     evidence_type: string;
+    notes: string | null;
     location_text: string | null;
+    capture_phase: "before" | "during" | "after" | null;
   }>;
+  evidenceByPhase: Record<string, Report["evidence"]>;
+  structuredFindings: Array<{
+    id: string;
+    noteType: string;
+    itemText: string;
+    location: string | null;
+    issueDescription: string;
+    remediationAction: string | null;
+    quantity: number | null;
+    materials: string | null;
+    riskLevel: string | null;
+  }>;
+  assembly: { pricingVisibility: string };
 };
 const button =
   "inline-flex min-h-11 items-center justify-center gap-2 rounded-md px-4 text-sm font-semibold";
@@ -209,6 +225,12 @@ function ConsultingReport({ report, onBack }: { report: Report; onBack: () => vo
           <Summary label="Visit" value={report.siteVisit.status} />
           <Summary label="Evidence" value={report.evidence.length} />
         </div>
+        {report.workItem && (
+          <div className="mt-4 rounded-lg border border-border bg-background p-3 text-sm">
+            <span className="font-semibold">Work item:</span> {report.workItem.title} · {report.workItem.status}
+            {report.workItem.scope ? ` · ${report.workItem.scope}` : ""}
+          </div>
+        )}
       </header>
       <section className="rounded-xl border border-border/60 bg-surface p-6 shadow-sm">
         <h3 className="mb-3 text-lg font-bold">Site visit</h3>
@@ -265,22 +287,54 @@ function ConsultingReport({ report, onBack }: { report: Report; onBack: () => vo
         )}
       </section>
       <section className="rounded-xl border border-border/60 bg-surface p-6 shadow-sm">
-        <h3 className="mb-3 text-lg font-bold">Evidence</h3>
+        <h3 className="mb-3 text-lg font-bold">Evidence by phase</h3>
         {report.evidence.length ? (
-          <div className="space-y-2">
-            {report.evidence.map((file) => (
-              <div
-                key={file.id}
-                className="rounded-lg border border-border bg-background p-3 text-sm"
-              >
-                {file.file_name} · {file.evidence_type}
-                {file.location_text ? ` · ${file.location_text}` : ""}
+          <div className="grid gap-4 md:grid-cols-3">
+            {["before", "during", "after"].map((phase) => (
+              <div key={phase} className="rounded-lg border border-border bg-background p-3">
+                <h4 className="mb-2 text-sm font-semibold capitalize">{phase}</h4>
+                {(report.evidenceByPhase[phase] ?? []).length ? (
+                  <div className="space-y-2">
+                    {(report.evidenceByPhase[phase] ?? []).map((file) => (
+                      <div key={file.id} className="text-sm">
+                        <div className="font-medium">{file.file_name}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {file.evidence_type}{file.location_text ? ` · ${file.location_text}` : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="text-xs text-muted-foreground">No evidence.</p>}
               </div>
             ))}
           </div>
         ) : (
           <p className="text-sm text-muted-foreground">No evidence attached.</p>
         )}
+      </section>
+      <section className="rounded-xl border border-border/60 bg-surface p-6 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h3 className="text-lg font-bold">Structured findings</h3>
+          <span className="text-xs text-muted-foreground">Pricing: {report.assembly.pricingVisibility.replaceAll("_", " ")}</span>
+        </div>
+        {report.structuredFindings.length ? (
+          <div className="mt-3 space-y-3">
+            {report.structuredFindings.map((finding) => (
+              <div key={finding.id} className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
+                <div className="flex flex-wrap justify-between gap-2">
+                  <span className="font-semibold">{finding.noteType}: {finding.issueDescription}</span>
+                  {finding.riskLevel && <span className="text-xs font-semibold uppercase">{finding.riskLevel} risk</span>}
+                </div>
+                <div className="mt-1 text-xs text-amber-950">
+                  {finding.location ? `Location: ${finding.location} · ` : ""}
+                  {finding.remediationAction ?? "Remediation not specified"}
+                  {finding.quantity !== null ? ` · Qty ${finding.quantity}` : ""}
+                  {finding.materials ? ` · ${finding.materials}` : ""}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : <p className="mt-3 text-sm text-muted-foreground">No structured findings attached.</p>}
       </section>
     </article>
   );

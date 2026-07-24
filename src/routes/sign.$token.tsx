@@ -17,6 +17,8 @@ type SignoffResponse = {
     projectName: string | null;
     reportStatus: string | null;
     jobCardStatus: string | null;
+    reportType?: string | null;
+    inspectionReport?: ClientInspectionReport | null;
     quoteNumber?: string | null;
     quoteStatus?: string | null;
     siteName?: string | null;
@@ -28,6 +30,50 @@ type SignoffResponse = {
     signerRole: string | null;
     signatureData: Record<string, unknown>;
   } | null;
+};
+
+type ClientInspectionReport = {
+  generatedAt: string | null;
+  overallOutcome: string | null;
+  overallRiskLevel: string | null;
+  inspectionCount: number;
+  blocks: ClientInspectionBlock[];
+};
+type ClientInspectionBlock = {
+  inspectionId: string | null;
+  name: string | null;
+  category: string | null;
+  asset: { name?: string | null; tag?: string | null; type?: string | null };
+  area: string | null;
+  technicianName: string | null;
+  completedAt: string | null;
+  riskLevel: string | null;
+  outcome: string | null;
+  items: ClientInspectionItem[];
+};
+type ClientInspectionItem = {
+  itemText: string | null;
+  sansClause: string | null;
+  outcome: string | null;
+  comment: string | null;
+  naReason: string | null;
+  findings: Array<{
+    issue_description?: string | null;
+    location?: string | null;
+    remediation_action?: string | null;
+    quantity?: number | null;
+    materials?: string | null;
+  }>;
+  evidence: Array<{
+    id: string | null;
+    fileName: string | null;
+    mimeType: string | null;
+    locationText: string | null;
+    captureTimestamp: string | null;
+    gpsLat: number | null;
+    gpsLng: number | null;
+    url: string | null;
+  }>;
 };
 
 type Point = { x: number; y: number; t: number };
@@ -285,6 +331,10 @@ function ClientSignoff() {
           </div>
         </div>
 
+        {data?.target.inspectionReport && (
+          <ClientInspectionReportView report={data.target.inspectionReport} />
+        )}
+
         {!signed && (
           <div className="space-y-4 rounded-lg border border-border/60 bg-white p-5">
             <label className="block">
@@ -346,5 +396,108 @@ function ClientSignoff() {
         )}
       </div>
     </div>
+  );
+}
+
+function ClientInspectionReportView({ report }: { report: ClientInspectionReport }) {
+  return (
+    <section className="space-y-5 rounded-lg border border-border/60 bg-surface p-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Inspection report
+          </div>
+          <h2 className="mt-1 text-xl font-bold">Inspection findings and evidence</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {report.inspectionCount} inspection block{report.inspectionCount === 1 ? "" : "s"} ·{" "}
+            {report.overallOutcome ?? "Review required"} · {report.overallRiskLevel ?? "risk not rated"} risk
+          </p>
+        </div>
+        {report.generatedAt && (
+          <div className="text-xs text-muted-foreground">
+            Generated {new Date(report.generatedAt).toLocaleString()}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-4">
+        {report.blocks.map((block) => (
+          <article key={block.inspectionId ?? `${block.name}-${block.completedAt}`} className="rounded-lg border border-border bg-background">
+            <header className="border-b border-border p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted-foreground">
+                    {block.category ?? "Inspection"}
+                  </div>
+                  <h3 className="mt-1 font-semibold">
+                    {block.asset.name ?? "Asset"}
+                    {block.area ? ` · ${block.area}` : ""}
+                  </h3>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {block.asset.tag ?? block.asset.type ?? ""}
+                    {block.technicianName ? ` · Technician: ${block.technicianName}` : ""}
+                    {block.completedAt ? ` · Completed ${new Date(block.completedAt).toLocaleString()}` : ""}
+                  </p>
+                </div>
+                <div className="flex gap-2 text-xs font-semibold uppercase">
+                  <span className="rounded-full bg-surface-2 px-2.5 py-1">{block.outcome ?? "review"}</span>
+                  <span className="rounded-full bg-surface-2 px-2.5 py-1">{block.riskLevel ?? "unrated"} risk</span>
+                </div>
+              </div>
+            </header>
+
+            <div className="divide-y divide-border">
+              {block.items.map((item, index) => (
+                <div key={`${block.inspectionId}-${index}`} className="p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <div className="font-medium">{item.itemText ?? "Checklist item"}</div>
+                      {item.sansClause && <div className="text-xs text-muted-foreground">SANS clause {item.sansClause}</div>}
+                    </div>
+                    <span className="rounded-full bg-surface-2 px-2.5 py-1 text-xs font-semibold uppercase">
+                      {item.outcome ?? "not answered"}
+                    </span>
+                  </div>
+                  {item.comment && <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">{item.comment}</p>}
+                  {item.naReason && <p className="mt-2 text-xs text-muted-foreground">N/A: {item.naReason}</p>}
+                  {item.findings.length > 0 && (
+                    <div className="mt-3 space-y-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+                      <div className="text-xs font-bold uppercase tracking-wider text-amber-800">Findings</div>
+                      {item.findings.map((finding, findingIndex) => (
+                        <div key={findingIndex}>
+                          <div className="font-medium">{finding.issue_description ?? "Finding"}</div>
+                          <div className="text-xs">
+                            {[finding.location && `Location: ${finding.location}`, finding.remediation_action, finding.quantity !== null && finding.quantity !== undefined && `Qty ${finding.quantity}`, finding.materials].filter(Boolean).join(" · ")}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {item.evidence.length > 0 && (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {item.evidence.map((evidence) => (
+                        <figure key={evidence.id ?? evidence.fileName} className="overflow-hidden rounded-md border border-border bg-surface">
+                          {evidence.url && evidence.mimeType?.startsWith("image/") ? (
+                            <img src={evidence.url} alt={evidence.locationText ?? evidence.fileName ?? "Inspection evidence"} className="aspect-video w-full object-cover" />
+                          ) : (
+                            <a href={evidence.url ?? "#"} target="_blank" rel="noreferrer" className="flex min-h-24 items-center justify-center p-4 text-sm font-medium text-brand-blue underline">
+                              Open {evidence.fileName ?? "evidence file"}
+                            </a>
+                          )}
+                          <figcaption className="p-2 text-xs text-muted-foreground">
+                            {evidence.locationText ?? evidence.fileName ?? "Evidence"}
+                            {evidence.gpsLat !== null && evidence.gpsLng !== null ? ` · GPS ${Number(evidence.gpsLat).toFixed(4)}, ${Number(evidence.gpsLng).toFixed(4)}` : ""}
+                          </figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
   );
 }

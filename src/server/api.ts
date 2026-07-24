@@ -7021,6 +7021,7 @@ async function clientSignoffContext(request: Request, token: string) {
   const result = await getPool().query(
     `SELECT csl.id, csl.target_type, csl.target_id, csl.status, csl.expires_at,
       sr.title AS report_title, sr.summary AS report_summary, sr.status AS report_status,
+      sr.report_type, sr.report_payload,
       jc.status AS job_card_status, jc.signed_at, jc.signed_by_name,
       o.name AS organization_name, p.name AS project_name, wi.title AS work_item_title,
       cs.signed_at AS signature_signed_at, cs.signer_name, cs.signer_role, cs.signature_data
@@ -7117,6 +7118,11 @@ async function clientSignoffContext(request: Request, token: string) {
       projectName: row.project_name ?? null,
       reportStatus: row.report_status ?? null,
       jobCardStatus: row.job_card_status ?? null,
+      reportType: row.report_type ?? null,
+      inspectionReport:
+        row.report_type === "site_survey"
+          ? clientInspectionReportForSignoff(row.report_payload, token)
+          : null,
     },
     signature: row.signature_signed_at
       ? {
@@ -7127,6 +7133,94 @@ async function clientSignoffContext(request: Request, token: string) {
         }
       : null,
   });
+}
+
+function clientInspectionReportForSignoff(payload: unknown, token: string) {
+  const report = asRecord(payload);
+  const rawBlocks = Array.isArray(report.blocks) ? report.blocks : [];
+  return {
+    generatedAt: report.generatedAt ?? null,
+    overallOutcome: report.overallOutcome ?? null,
+    overallRiskLevel: report.overallRiskLevel ?? null,
+    inspectionCount: report.inspectionCount ?? rawBlocks.length,
+    blocks: rawBlocks.map((rawBlock) => {
+      const block = asRecord(rawBlock);
+      const rawItems = Array.isArray(block.items) ? block.items : [];
+      return {
+        inspectionId: block.inspectionId ?? null,
+        name: block.name ?? null,
+        category: block.category ?? null,
+        asset: asRecord(block.asset),
+        area: block.area ?? null,
+        technicianName: block.technicianName ?? null,
+        completedAt: block.completedAt ?? null,
+        riskLevel: block.riskLevel ?? null,
+        outcome: block.outcome ?? null,
+        items: rawItems.map((rawItem) => {
+          const item = asRecord(rawItem);
+          const findings = Array.isArray(item.findings) ? item.findings : [];
+          const evidence = Array.isArray(item.evidence) ? item.evidence : [];
+          return {
+            itemText: item.itemText ?? null,
+            sansClause: item.sansClause ?? null,
+            outcome: item.outcome ?? null,
+            comment: item.comment ?? null,
+            naReason: item.naReason ?? null,
+            findings,
+            evidence: evidence.map((rawEvidence) => {
+              const file = asRecord(rawEvidence);
+              const evidenceId = optionalText(file.id);
+              return {
+                id: evidenceId,
+                fileName: file.file_name ?? null,
+                mimeType: file.mime_type ?? null,
+                locationText: file.location_text ?? null,
+                captureTimestamp: file.capture_timestamp ?? null,
+                gpsLat: file.gps_lat ?? null,
+                gpsLng: file.gps_lng ?? null,
+                url: evidenceId
+                  ? `/api/client-signoff/${encodeURIComponent(token)}/evidence/${encodeURIComponent(evidenceId)}`
+                  : null,
+              };
+            }),
+          };
+        }),
+      };
+    }),
+  };
+}
+
+async function clientSignoffEvidence(request: Request, token: string, evidenceId: string) {
+  const result = await getPool().query(
+    `SELECT ef.file_path, ef.mime_type
+     FROM client_signoff_links csl
+     JOIN service_reports sr ON sr.id = csl.target_id AND csl.target_type = 'service_report'
+     JOIN evidence_files ef ON ef.id = $2
+     WHERE csl.token_hash = $1
+       AND sr.report_type = 'site_survey'
+       AND EXISTS (
+         SELECT 1
+         FROM jsonb_array_elements(COALESCE(sr.report_payload->'blocks', '[]'::jsonb)) block,
+              jsonb_array_elements(COALESCE(block->'items', '[]'::jsonb)) item,
+              jsonb_array_elements(COALESCE(item->'evidence', '[]'::jsonb)) evidence
+         WHERE evidence->>'id' = ef.id::text
+       )
+     LIMIT 1`,
+    [hashToken(token), evidenceId],
+  );
+  const row = result.rows[0];
+  if (!row?.file_path) return json({ error: "Evidence file not found" }, { status: 404 });
+  try {
+    const buffer = await readFile(row.file_path as string);
+    return new Response(buffer, {
+      headers: {
+        "content-type": row.mime_type || "application/octet-stream",
+        "cache-control": "private, max-age=3600",
+      },
+    });
+  } catch {
+    return json({ error: "Evidence file is unavailable" }, { status: 404 });
+  }
 }
 
 async function clientSignoffSubmit(request: Request, token: string) {
@@ -14895,6 +14989,15 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return inspectionDetail(request, inspectionDetailMatch[1]);
     if (request.method === "POST" && path === "/api/client-signoff-links")
       return createClientSignoffLink(request);
+    const clientSignoffEvidenceMatch = path.match(
+      /^\/api\/client-signoff\/([^/]+)\/evidence\/([^/]+)$/,
+    );
+    if (request.method === "GET" && clientSignoffEvidenceMatch?.[1] && clientSignoffEvidenceMatch[2])
+      return clientSignoffEvidence(
+        request,
+        clientSignoffEvidenceMatch[1],
+        clientSignoffEvidenceMatch[2],
+      );
     const clientSignoffMatch = path.match(/^\/api\/client-signoff\/([^/]+)$/);
     if (clientSignoffMatch?.[1] && request.method === "GET")
       return clientSignoffContext(request, clientSignoffMatch[1]);

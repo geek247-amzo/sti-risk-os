@@ -16,7 +16,7 @@ Queued: B3 — automated management reporting; B4 — PDF/Excel export.
 
 Unblocked and not started: none in Stream D. C1, D-1, D-2, and D-3 are complete.
 
-Blocked: Stream E pending Yeastar API/auth and PABX details.
+Active: E1 discovery complete; E2 recording/CDR ingestion is next.
 
 Deferred: F3 final verification, until the remaining streams close.
 
@@ -73,9 +73,12 @@ Sequence: B1 → B2 → B3 → B4.
 
 ## Stream E — Yeastar VoIP
 
-Hard blocked pending actual Yeastar API/auth documentation and CloudMonkey PABX configuration details.
+E1 discovery is complete. The PBX is reachable and authenticated with the server-injected credentials. No recording/CDR ingestion has been implemented yet.
 
-Planned sequence: E1 configuration → E2 recordings/CDR → E3 Gemini 2.5 Flash transcription → E4 customer matching/tagging rules → E5/E6 staff call and tagging views → E7 customer call history → E8 transcript RAG indexing.
+Confirmed sequence: E1 authentication → E2 recordings/CDR → E3 Gemini 2.5 Flash transcription → E4 customer matching/tagging rules → E5/E6 staff call and tagging views → E7 customer call history → E8 transcript RAG indexing.
+
+- E1 — **discovery complete**, commit `546f08e`. Server env vars are present, token exchange succeeds, access-token expiry is 30 minutes, refresh-token expiry is 24 hours, and low-risk authenticated calls succeed. No credentials are committed.
+- E2 — **next**. Implement scheduled/pull ingestion against the confirmed `cdr` and `recording` OpenAPI endpoints. Webhook/push behavior is not assumed; verify it against the PBX API surface before implementation.
 
 Do not guess push/pull behavior, authentication, number matching, personal-call retention, or tagging permissions.
 
@@ -91,7 +94,7 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 |---|---|---|
 | Agent 1 | B2 → B4 | Active B-stream owner |
 | Agent 2 | C1 / D | C1 and Stream D complete |
-| Agent 3 | Yeastar discovery → E1–E8 | Blocked pending API/PABX details |
+| Agent 3 | E2 → E8 | E1 discovery complete; ingestion next |
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.
 
@@ -111,4 +114,4 @@ F3 remains outside the split and runs continuously at stream close, then as the 
 
 D1–D3 are final and no longer require a stakeholder confirmation message. Any later objection is a normal change request against shipped functionality, not a blocker.
 
-Yeastar credentials must be stored in the server secret environment before authenticated E1 discovery resumes. The raw credential values must never appear in this file, chat, logs, or commits.
+Yeastar credentials are stored in the server secret environment. The raw credential values must never appear in this file, chat, logs, or commits; rotate the client secret after this chat-based handoff.

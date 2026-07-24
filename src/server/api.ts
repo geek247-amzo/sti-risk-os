@@ -1495,6 +1495,62 @@ async function refreshTaskEmbedding(client: pg.Pool | pg.PoolClient, taskId: str
   });
 }
 
+async function refreshServiceReportEmbedding(
+  client: pg.Pool | pg.PoolClient,
+  reportId: string,
+  payload: Record<string, unknown>,
+) {
+  const organization = asRecord(payload.organization);
+  const site = asRecord(payload.site);
+  const workItem = asRecord(payload.workItem);
+  const evidenceByPhase = asRecord(payload.evidenceByPhase);
+  const findings = Array.isArray(payload.structuredFindings) ? payload.structuredFindings : [];
+  const evidenceLines = ["before", "during", "after", "unclassified"]
+    .flatMap((phase) => {
+      const entries = Array.isArray(evidenceByPhase[phase]) ? evidenceByPhase[phase] : [];
+      return entries.map((rawEntry, index) => {
+        const entry = asRecord(rawEntry);
+        return `${phase} evidence ${index + 1}: ${
+          optionalText(entry.fileName) ?? optionalText(entry.evidenceType) ?? "file"
+        }${optionalText(entry.notes) ? ` — ${optionalText(entry.notes)}` : ""}`;
+      });
+    });
+  const findingLines = findings.map((rawFinding, index) => {
+    const finding = asRecord(rawFinding);
+    return [
+      `${index + 1}. ${optionalText(finding.noteType) ?? "Fault Found"}`,
+      optionalText(finding.location),
+      optionalText(finding.issueDescription),
+      optionalText(finding.remediationAction)
+        ? `Remediation: ${optionalText(finding.remediationAction)}`
+        : null,
+    ]
+      .filter(Boolean)
+      .join(" | ");
+  });
+  const content = [
+    `Service report ${reportId}`,
+    organization.name ? `Organization: ${organization.name}` : null,
+    site.name ? `Site: ${site.name}` : null,
+    workItem.title ? `Work item: ${workItem.title}` : null,
+    payload.stage ? `Stage: ${formatEmbeddingRecord(payload.stage)}` : null,
+    payload.siteVisit ? `Site visit: ${formatEmbeddingRecord(payload.siteVisit)}` : null,
+    evidenceLines.length ? `Evidence:\n${evidenceLines.join("\n")}` : null,
+    findingLines.length ? `Structured findings:\n${findingLines.join("\n")}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  await replaceEmbeddingDocument(client, "service_report", reportId, content, {
+    reportId,
+    organizationId: organization.id ?? null,
+    siteId: site.id ?? null,
+    workItemId: workItem.id ?? payload.workItemId ?? null,
+    reportType: payload.reportType ?? null,
+    pricingVisibility: "coordinator_only",
+  });
+}
+
 async function replaceQuoteLines(client: pg.Pool | pg.PoolClient, quoteId: string, lines: unknown) {
   if (!Array.isArray(lines) || lines.length === 0) {
     throw new Error("At least one quote line item is required");
@@ -9364,7 +9420,7 @@ async function buildConsultingReport(
   userId: string,
 ) {
   const stageResult = await client.query(
-    `SELECT css.*, sv.organization_id, sv.site_id, sv.building_id, sv.floor_id, sv.area_id,
+    `SELECT css.*, sv.organization_id, sv.site_id, sv.work_item_id, sv.building_id, sv.floor_id, sv.area_id,
       sv.capture_mode, sv.status AS visit_status, sv.notes AS visit_notes, sv.metadata AS visit_metadata,
       sv.started_at, sv.submitted_at, sv.reviewed_at, o.name AS organization_name, s.name AS site_name,
       c.name AS container_name, p.name AS project_name
@@ -9379,7 +9435,7 @@ async function buildConsultingReport(
   );
   const stage = stageResult.rows[0];
   if (!stage) throw Object.assign(new Error("Consulting stage not found"), { status: 404 });
-  const [area, measurements, assets, evidence] = await Promise.all([
+  const [area, measurements, assets, evidence, workItem, findings] = await Promise.all([
     stage.area_id
       ? client.query(
           `SELECT a.*, t.standard_code, t.standard_name FROM areas a LEFT JOIN taxonomies t ON t.id = a.taxonomy_id WHERE a.id = $1`,
@@ -9394,16 +9450,65 @@ async function buildConsultingReport(
       [stage.site_id, stage.area_id],
     ),
     client.query(
-      `SELECT id, file_name, mime_type, evidence_type, file_path, area_id, area_measurement_id, audio_duration, recording_format, location_text, capture_timestamp, created_at FROM evidence_files WHERE site_visit_id = $1 ORDER BY created_at`,
+      `SELECT id, file_name, mime_type, evidence_type, notes, area_id, area_measurement_id,
+        audio_duration, recording_format, location_text, capture_timestamp, capture_phase, created_at
+       FROM evidence_files WHERE site_visit_id = $1 ORDER BY created_at`,
       [stage.site_visit_id],
     ),
+    stage.work_item_id
+      ? client.query(
+          `SELECT id, title, status, scope, work_type, priority, due_at, completed_at
+           FROM work_items WHERE id = $1`,
+          [stage.work_item_id],
+        )
+      : { rows: [] },
+    client.query(
+      `SELECT f.id, f.location, f.issue_description, f.remediation_action, f.quantity,
+        f.materials, f.ai_confidence, f.raw_payload, i.id AS inspection_id,
+        i.work_item_id, i.outcome, i.risk_level, cti.item_text
+       FROM inspection_response_findings f
+       JOIN inspection_item_responses iir ON iir.id = f.inspection_item_response_id
+       JOIN inspections i ON i.id = iir.inspection_id
+       JOIN checklist_template_items cti ON cti.id = iir.checklist_template_item_id
+       WHERE i.site_id = $1
+         AND ($2::uuid IS NULL OR i.work_item_id = $2::uuid)
+         AND i.status = 'completed'
+       ORDER BY f.created_at`,
+      [stage.site_id, stage.work_item_id],
+    ),
   ]);
+  const evidenceByPhase = {
+    before: evidence.rows.filter((entry) => entry.capture_phase === "before"),
+    during: evidence.rows.filter((entry) => entry.capture_phase === "during"),
+    after: evidence.rows.filter((entry) => entry.capture_phase === "after"),
+    unclassified: evidence.rows.filter(
+      (entry) => !["before", "during", "after"].includes(entry.capture_phase),
+    ),
+  };
+  const structuredFindings = findings.rows.map((finding) => {
+    const rawPayload = asRecord(finding.raw_payload);
+    return {
+      id: finding.id,
+      inspectionId: finding.inspection_id,
+      itemText: finding.item_text,
+      noteType: optionalText(rawPayload.noteType) ?? "Fault Found",
+      location: finding.location,
+      issueDescription: finding.issue_description,
+      remediationAction: finding.remediation_action,
+      quantity: finding.quantity,
+      materials: finding.materials,
+      aiConfidence: finding.ai_confidence,
+      outcome: finding.outcome,
+      riskLevel: finding.risk_level,
+    };
+  });
   return {
     generatedAt: new Date().toISOString(),
     organization: { id: stage.organization_id, name: stage.organization_name },
     site: { id: stage.site_id, name: stage.site_name },
     container: { id: stage.container_id, name: stage.container_name },
     project: stage.project_id ? { id: stage.project_id, name: stage.project_name } : null,
+    workItem: workItem.rows[0] ?? null,
     stage: {
       id: stage.id,
       stageType: stage.stage_type,
@@ -9426,6 +9531,14 @@ async function buildConsultingReport(
     measurements: measurements.rows,
     assets: assets.rows,
     evidence: evidence.rows,
+    evidenceByPhase,
+    structuredFindings,
+    reportType: "consulting",
+    assembly: {
+      evidencePhases: ["before", "during", "after"],
+      findings: "structured",
+      pricingVisibility: "coordinator_only",
+    },
     preparedBy: userId,
   };
 }
@@ -9451,6 +9564,7 @@ async function consultingStageReport(request: Request, stageId: string) {
         payload.siteVisit.id,
       ],
     );
+    await refreshServiceReportEmbedding(client, inserted.rows[0].id, payload);
     await client.query(
       "UPDATE consulting_solutioning_stages SET service_report_id = $2, updated_at = now() WHERE id = $1",
       [stageId, inserted.rows[0].id],

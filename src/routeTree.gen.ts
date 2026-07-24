@@ -43,6 +43,7 @@ import { Route as StaffConsultingReportsRouteImport } from './routes/staff.consu
 import { Route as StaffComplianceRouteImport } from './routes/staff.compliance'
 import { Route as StaffClientsRouteImport } from './routes/staff.clients'
 import { Route as StaffChatRouteImport } from './routes/staff.chat'
+import { Route as StaffCapabilityRouteImport } from './routes/staff.capability'
 import { Route as StaffBillingRouteImport } from './routes/staff.billing'
 import { Route as StaffAutomationsRouteImport } from './routes/staff.automations'
 import { Route as StaffAssetsRiskRouteImport } from './routes/staff.assets-risk'
@@ -228,6 +229,11 @@ const StaffChatRoute = StaffChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => StaffRoute,
 } as any)
+const StaffCapabilityRoute = StaffCapabilityRouteImport.update({
+  id: '/capability',
+  path: '/capability',
+  getParentRoute: () => StaffRoute,
+} as any)
 const StaffBillingRoute = StaffBillingRouteImport.update({
   id: '/billing',
   path: '/billing',
@@ -314,6 +320,7 @@ export interface FileRoutesByFullPath {
   '/staff/assets-risk': typeof StaffAssetsRiskRoute
   '/staff/automations': typeof StaffAutomationsRoute
   '/staff/billing': typeof StaffBillingRoute
+  '/staff/capability': typeof StaffCapabilityRoute
   '/staff/chat': typeof StaffChatRoute
   '/staff/clients': typeof StaffClientsRoute
   '/staff/compliance': typeof StaffComplianceRoute
@@ -363,6 +370,7 @@ export interface FileRoutesByTo {
   '/staff/assets-risk': typeof StaffAssetsRiskRoute
   '/staff/automations': typeof StaffAutomationsRoute
   '/staff/billing': typeof StaffBillingRoute
+  '/staff/capability': typeof StaffCapabilityRoute
   '/staff/chat': typeof StaffChatRoute
   '/staff/clients': typeof StaffClientsRoute
   '/staff/compliance': typeof StaffComplianceRoute
@@ -414,6 +422,7 @@ export interface FileRoutesById {
   '/staff/assets-risk': typeof StaffAssetsRiskRoute
   '/staff/automations': typeof StaffAutomationsRoute
   '/staff/billing': typeof StaffBillingRoute
+  '/staff/capability': typeof StaffCapabilityRoute
   '/staff/chat': typeof StaffChatRoute
   '/staff/clients': typeof StaffClientsRoute
   '/staff/compliance': typeof StaffComplianceRoute
@@ -466,6 +475,7 @@ export interface FileRouteTypes {
     | '/staff/assets-risk'
     | '/staff/automations'
     | '/staff/billing'
+    | '/staff/capability'
     | '/staff/chat'
     | '/staff/clients'
     | '/staff/compliance'
@@ -515,6 +525,7 @@ export interface FileRouteTypes {
     | '/staff/assets-risk'
     | '/staff/automations'
     | '/staff/billing'
+    | '/staff/capability'
     | '/staff/chat'
     | '/staff/clients'
     | '/staff/compliance'
@@ -565,6 +576,7 @@ export interface FileRouteTypes {
     | '/staff/assets-risk'
     | '/staff/automations'
     | '/staff/billing'
+    | '/staff/capability'
     | '/staff/chat'
     | '/staff/clients'
     | '/staff/compliance'
@@ -855,6 +867,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StaffChatRouteImport
       parentRoute: typeof StaffRoute
     }
+    '/staff/capability': {
+      id: '/staff/capability'
+      path: '/capability'
+      fullPath: '/staff/capability'
+      preLoaderRoute: typeof StaffCapabilityRouteImport
+      parentRoute: typeof StaffRoute
+    }
     '/staff/billing': {
       id: '/staff/billing'
       path: '/billing'
@@ -1026,6 +1045,7 @@ interface StaffRouteChildren {
   StaffAssetsRiskRoute: typeof StaffAssetsRiskRoute
   StaffAutomationsRoute: typeof StaffAutomationsRoute
   StaffBillingRoute: typeof StaffBillingRoute
+  StaffCapabilityRoute: typeof StaffCapabilityRoute
   StaffChatRoute: typeof StaffChatRoute
   StaffClientsRoute: typeof StaffClientsRoute
   StaffComplianceRoute: typeof StaffComplianceRoute
@@ -1059,6 +1079,7 @@ const StaffRouteChildren: StaffRouteChildren = {
   StaffAssetsRiskRoute: StaffAssetsRiskRoute,
   StaffAutomationsRoute: StaffAutomationsRoute,
   StaffBillingRoute: StaffBillingRoute,
+  StaffCapabilityRoute: StaffCapabilityRoute,
   StaffChatRoute: StaffChatRoute,
   StaffClientsRoute: StaffClientsRoute,
   StaffComplianceRoute: StaffComplianceRoute,

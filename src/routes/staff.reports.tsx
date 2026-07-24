@@ -126,10 +126,34 @@ function Reports() {
           <h2 className="text-lg font-bold">Commercial and service delivery</h2>
         </div>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <MetricCard label="Collected" value={money(data?.kpis.revenue.collected_value_cents ?? 0)} detail={`Invoiced ${money(data?.kpis.revenue.invoiced_value_cents ?? 0)}`} />
-          <MetricCard label="Open opportunities" value={data?.kpis.opportunities.count ?? 0} detail={money(data?.kpis.opportunities.value_cents ?? 0)} />
-          <MetricCard label="Quote win rate" value={data?.kpis.quotations.win_rate == null ? "—" : `${Math.round(data.kpis.quotations.win_rate * 100)}%`} detail={`${data?.kpis.quotations.issued ?? 0} issued · ${money(data?.kpis.quotations.issued_value_cents ?? 0)}`} />
-          <MetricCard label="Service delivery" value={data?.kpis.serviceDelivery.completed ?? 0} detail={`${data?.kpis.serviceDelivery.open ?? 0} open · CSAT not captured`} />
+          <MetricCard
+            href="/staff/billing"
+            label="Collected"
+            value={money(data?.kpis.revenue.collected_value_cents ?? 0)}
+            detail={`Invoiced ${money(data?.kpis.revenue.invoiced_value_cents ?? 0)}`}
+          />
+          <MetricCard
+            href="/staff/crm"
+            label="Open opportunities"
+            value={data?.kpis.opportunities.count ?? 0}
+            detail={money(data?.kpis.opportunities.value_cents ?? 0)}
+          />
+          <MetricCard
+            href="/staff/quotes"
+            label="Quote win rate"
+            value={
+              data?.kpis.quotations.win_rate == null
+                ? "—"
+                : `${Math.round(data.kpis.quotations.win_rate * 100)}%`
+            }
+            detail={`${data?.kpis.quotations.issued ?? 0} issued · ${money(data?.kpis.quotations.issued_value_cents ?? 0)}`}
+          />
+          <MetricCard
+            href="/staff/work"
+            label="Service delivery"
+            value={data?.kpis.serviceDelivery.completed ?? 0}
+            detail={`${data?.kpis.serviceDelivery.open ?? 0} open · CSAT not captured`}
+          />
         </div>
       </section>
 
@@ -223,12 +247,29 @@ function Reports() {
   );
 }
 
-function MetricCard({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+function MetricCard({
+  href,
+  label,
+  value,
+  detail,
+}: {
+  href: "/staff/billing" | "/staff/crm" | "/staff/quotes" | "/staff/work";
+  label: string;
+  value: string | number;
+  detail: string;
+}) {
   return (
-    <div className="rounded-lg border border-border/60 bg-surface p-5">
+    <Link
+      to={href}
+      className="group rounded-lg border border-border/60 bg-surface p-5 transition hover:border-brand-orange/50 hover:bg-surface-2"
+      aria-label={`Open ${label} records`}
+    >
       <div className="text-xs uppercase tracking-wider text-muted-foreground">{label}</div>
       <div className="mt-2 text-2xl font-bold">{value}</div>
       <div className="mt-1 text-xs text-muted-foreground">{detail}</div>
-    </div>
+      <div className="mt-3 text-xs font-semibold text-brand-orange opacity-0 transition group-hover:opacity-100">
+        View records →
+      </div>
+    </Link>
   );
 }

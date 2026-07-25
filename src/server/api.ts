@@ -3,6 +3,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
 import { PDFParse } from "pdf-parse";
+import { runYeastarPoll, startYeastarPoller } from "./yeastar";
 
 const { Pool } = pg;
 
@@ -146,6 +147,12 @@ function unauthorized() {
 
 function forbidden() {
   return json({ error: "Insufficient permissions" }, { status: 403 });
+}
+
+async function yeastarPoll(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  return json(await runYeastarPoll(getPool()));
 }
 
 function parseCookies(request: Request) {
@@ -15369,6 +15376,9 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
 
     if (!path.startsWith("/api/")) return null;
 
+    if (request.method === "POST" && path === "/api/integrations/yeastar/poll")
+      return yeastarPoll(request);
+
     if (request.method === "POST" && path === "/api/internal/rag/search")
       return internalRagSearch(request);
     if (
@@ -15784,4 +15794,10 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
     const message = error instanceof Error ? error.message : "Unexpected API error";
     return json({ error: message }, { status: message.includes("required") ? 400 : 500 });
   }
+}
+
+// The production deployment is a single application container, so this avoids introducing
+// a second scheduler. It is disabled outside production and when Yeastar credentials are absent.
+if (process.env.NODE_ENV === "production" && process.env.YEASTAR_CLIENT_ID && process.env.YEASTAR_CLIENT_SECRET) {
+  startYeastarPoller(getPool());
 }

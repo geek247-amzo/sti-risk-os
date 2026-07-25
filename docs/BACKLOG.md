@@ -78,7 +78,7 @@ E1 discovery is complete. The PBX is reachable and authenticated with the server
 Confirmed sequence: E1 authentication → E2 recordings/CDR → E3 Gemini 2.5 Flash transcription → E4 customer matching/tagging rules → E5/E6 staff call and tagging views → E7 customer call history → E8 transcript RAG indexing.
 
 - E1 — **discovery complete**, commit `546f08e`. Server env vars are present, token exchange succeeds, access-token expiry is 30 minutes, refresh-token expiry is 24 hours, and low-risk authenticated calls succeed. No credentials are committed.
-- E2 — **deferred for later go-live phase**. Discovery is complete: this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`, so ingestion must support scheduled pull/reconciliation first. The recording list is live and currently reports 20 recordings. Retention is governed by PBX auto-cleanup settings and still needs portal confirmation; credential rotation is also pending. No recording/CDR ingestion is enabled yet.
+- E2 — **in progress**. Discovery is complete: this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`, so ingestion uses scheduled pull/reconciliation. The recording list and `cdr/list` are live. Retention is storage-driven rather than a fixed preservation period, so the implementation uses a configurable 20-minute default poll (bounded to 15–30 minutes) and a configurable 120-minute idempotent backfill window. Certificate pinning is required; TLS verification is not disabled. Current implementation stores CDR and recording metadata in `yeastar_calls`; audio download, transcription, matching, tagging, and staff/customer views remain E3–E8.
 
 Do not guess push/pull behavior, authentication, number matching, personal-call retention, or tagging permissions.
 
@@ -94,7 +94,7 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 |---|---|---|
 | Agent 1 | B3 delivery automation → B4 | Email delivery remains deferred in the current go-live scope |
 | Agent 2 | C1 / D | C1 and Stream D complete |
-| Agent 3 | E2 → E8 | E1 online; ingestion deferred until credential rotation and retention confirmation |
+| Agent 3 | E2 → E8 | E1 online; E2 pull ingestion in progress, then transcription/matching/views |
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.
 

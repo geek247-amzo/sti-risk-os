@@ -46,6 +46,7 @@ function requestText(url: URL, options: https.RequestOptions & { body?: string }
           ca: Buffer.from(requiredEnv("YEASTAR_TLS_CERT_PEM_B64"), "base64"),
           checkServerIdentity: certificateCheck,
           headers: {
+            "User-Agent": "sti-risk-os/1.0",
             ...(body
               ? { "content-type": "application/json", "content-length": Buffer.byteLength(body) }
               : {}),

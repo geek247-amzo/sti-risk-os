@@ -43,9 +43,12 @@ function requestText(url: URL, options: https.RequestOptions & { body?: string }
           ...requestOptions,
           method: requestOptions.method ?? (body ? "POST" : "GET"),
           rejectUnauthorized: true,
+          ca: Buffer.from(requiredEnv("YEASTAR_TLS_CERT_PEM_B64"), "base64"),
           checkServerIdentity: certificateCheck,
           headers: {
-            ...(body ? { "content-type": "application/json", "content-length": Buffer.byteLength(body) } : {}),
+            ...(body
+              ? { "content-type": "application/json", "content-length": Buffer.byteLength(body) }
+              : {}),
             ...(requestOptions.headers ?? {}),
           },
         },
@@ -109,7 +112,9 @@ async function getAccessToken() {
 }
 
 function records(value: unknown): JsonRecord[] {
-  return Array.isArray(value) ? value.filter((item): item is JsonRecord => Boolean(item && typeof item === "object")) : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is JsonRecord => Boolean(item && typeof item === "object"))
+    : [];
 }
 
 function stringValue(record: JsonRecord, key: string) {
@@ -144,9 +149,17 @@ export async function runYeastarPoll(pool: pg.Pool) {
     const state = await pool.query(
       "SELECT backfill_minutes FROM yeastar_sync_state WHERE id = true",
     );
-    const backfillMinutes = Number(state.rows[0]?.backfill_minutes ?? process.env.YEASTAR_BACKFILL_MINUTES ?? 120);
+    const backfillMinutes = Number(
+      state.rows[0]?.backfill_minutes ?? process.env.YEASTAR_BACKFILL_MINUTES ?? 120,
+    );
     const token = await getAccessToken();
-    const query = { access_token: token, page: "1", page_size: "10000", order_by: "desc", sort_by: "time" };
+    const query = {
+      access_token: token,
+      page: "1",
+      page_size: "10000",
+      order_by: "desc",
+      sort_by: "time",
+    };
     const [cdrPayload, recordingPayload] = await Promise.all([
       apiGet("cdr/list", query),
       apiGet("recording/list", query),
@@ -173,7 +186,13 @@ export async function runYeastarPoll(pool: pg.Pool) {
       const log = await client.query(
         `INSERT INTO integration_sync_log (integration, operation, direction, status, request)
          VALUES ('yeastar', 'call_poll', 'inbound', 'running', $1::jsonb) RETURNING id`,
-        [JSON.stringify({ backfillMinutes, cdrCount: cdrs.length, recordingCount: recordings.length })],
+        [
+          JSON.stringify({
+            backfillMinutes,
+            cdrCount: cdrs.length,
+            recordingCount: recordings.length,
+          }),
+        ],
       );
       logId = log.rows[0].id;
       let upserted = 0;
@@ -206,7 +225,10 @@ export async function runYeastarPoll(pool: pg.Pool) {
              raw_recording = CASE WHEN EXCLUDED.raw_recording <> '{}'::jsonb THEN EXCLUDED.raw_recording ELSE yeastar_calls.raw_recording END,
              last_seen_at = now(), updated_at = now()`,
           [
-            providerUid, stringValue(cdr, "id"), stringValue(recording, "id"), callTime(cdr) ?? callTime(recording),
+            providerUid,
+            stringValue(cdr, "id"),
+            stringValue(recording, "id"),
+            callTime(cdr) ?? callTime(recording),
             stringValue(cdr, "call_type") ?? stringValue(recording, "call_type"),
             stringValue(cdr, "call_from") ?? stringValue(recording, "call_from"),
             stringValue(cdr, "call_from_name") ?? stringValue(recording, "call_from_name"),
@@ -216,12 +238,20 @@ export async function runYeastarPoll(pool: pg.Pool) {
             stringValue(cdr, "call_to_number") ?? stringValue(recording, "call_to_number"),
             stringValue(cdr, "disposition") ?? stringValue(cdr, "last_status"),
             integerValue(cdr, "call_duration") ?? integerValue(recording, "duration"),
-            stringValue(recording, "file"), integerValue(recording, "size"), JSON.stringify(cdr), JSON.stringify(recording),
+            stringValue(recording, "file"),
+            integerValue(recording, "size"),
+            JSON.stringify(cdr),
+            JSON.stringify(recording),
           ],
         );
         upserted += 1;
       }
-      const result = { cdrCount: cdrs.length, recordingCount: recordings.length, upserted, backfillMinutes };
+      const result = {
+        cdrCount: cdrs.length,
+        recordingCount: recordings.length,
+        upserted,
+        backfillMinutes,
+      };
       await client.query(
         `INSERT INTO yeastar_sync_state (id, last_successful_poll_at, last_result, updated_at)
          VALUES (true, now(), $1::jsonb, now())
@@ -254,9 +284,15 @@ export async function runYeastarPoll(pool: pg.Pool) {
 export function startYeastarPoller(pool: pg.Pool) {
   if (pollTimer || process.env.NODE_ENV !== "production") return;
   if (!process.env.YEASTAR_CLIENT_ID || !process.env.YEASTAR_CLIENT_SECRET) return;
-  const minutes = Math.min(30, Math.max(15, Number(process.env.YEASTAR_POLL_INTERVAL_MINUTES ?? 20)));
+  const minutes = Math.min(
+    30,
+    Math.max(15, Number(process.env.YEASTAR_POLL_INTERVAL_MINUTES ?? 20)),
+  );
   const intervalMs = minutes * 60_000;
-  pollTimer = setInterval(() => void runYeastarPoll(pool).catch((error) => console.error("Yeastar poll failed", error)), intervalMs);
+  pollTimer = setInterval(
+    () => void runYeastarPoll(pool).catch((error) => console.error("Yeastar poll failed", error)),
+    intervalMs,
+  );
   pollTimer.unref?.();
   void runYeastarPoll(pool).catch((error) => console.error("Yeastar initial poll failed", error));
 }

@@ -34,6 +34,7 @@ import { Route as StaffPoOrdersRouteImport } from './routes/staff.po-orders'
 import { Route as StaffLoginRouteImport } from './routes/staff.login'
 import { Route as StaffInspectionsRouteImport } from './routes/staff.inspections'
 import { Route as StaffInspectionReportsRouteImport } from './routes/staff.inspection-reports'
+import { Route as StaffHelpRouteImport } from './routes/staff.help'
 import { Route as StaffGrowthRouteImport } from './routes/staff.growth'
 import { Route as StaffFieldWorkRouteImport } from './routes/staff.field-work'
 import { Route as StaffEmailRouteImport } from './routes/staff.email'
@@ -184,6 +185,11 @@ const StaffInspectionReportsRoute = StaffInspectionReportsRouteImport.update({
   path: '/inspection-reports',
   getParentRoute: () => StaffRoute,
 } as any)
+const StaffHelpRoute = StaffHelpRouteImport.update({
+  id: '/help',
+  path: '/help',
+  getParentRoute: () => StaffRoute,
+} as any)
 const StaffGrowthRoute = StaffGrowthRouteImport.update({
   id: '/growth',
   path: '/growth',
@@ -330,6 +336,7 @@ export interface FileRoutesByFullPath {
   '/staff/email': typeof StaffEmailRoute
   '/staff/field-work': typeof StaffFieldWorkRoute
   '/staff/growth': typeof StaffGrowthRouteWithChildren
+  '/staff/help': typeof StaffHelpRoute
   '/staff/inspection-reports': typeof StaffInspectionReportsRoute
   '/staff/inspections': typeof StaffInspectionsRoute
   '/staff/login': typeof StaffLoginRoute
@@ -380,6 +387,7 @@ export interface FileRoutesByTo {
   '/staff/email': typeof StaffEmailRoute
   '/staff/field-work': typeof StaffFieldWorkRoute
   '/staff/growth': typeof StaffGrowthRouteWithChildren
+  '/staff/help': typeof StaffHelpRoute
   '/staff/inspection-reports': typeof StaffInspectionReportsRoute
   '/staff/inspections': typeof StaffInspectionsRoute
   '/staff/login': typeof StaffLoginRoute
@@ -432,6 +440,7 @@ export interface FileRoutesById {
   '/staff/email': typeof StaffEmailRoute
   '/staff/field-work': typeof StaffFieldWorkRoute
   '/staff/growth': typeof StaffGrowthRouteWithChildren
+  '/staff/help': typeof StaffHelpRoute
   '/staff/inspection-reports': typeof StaffInspectionReportsRoute
   '/staff/inspections': typeof StaffInspectionsRoute
   '/staff/login': typeof StaffLoginRoute
@@ -485,6 +494,7 @@ export interface FileRouteTypes {
     | '/staff/email'
     | '/staff/field-work'
     | '/staff/growth'
+    | '/staff/help'
     | '/staff/inspection-reports'
     | '/staff/inspections'
     | '/staff/login'
@@ -535,6 +545,7 @@ export interface FileRouteTypes {
     | '/staff/email'
     | '/staff/field-work'
     | '/staff/growth'
+    | '/staff/help'
     | '/staff/inspection-reports'
     | '/staff/inspections'
     | '/staff/login'
@@ -586,6 +597,7 @@ export interface FileRouteTypes {
     | '/staff/email'
     | '/staff/field-work'
     | '/staff/growth'
+    | '/staff/help'
     | '/staff/inspection-reports'
     | '/staff/inspections'
     | '/staff/login'
@@ -802,6 +814,13 @@ declare module '@tanstack/react-router' {
       path: '/inspection-reports'
       fullPath: '/staff/inspection-reports'
       preLoaderRoute: typeof StaffInspectionReportsRouteImport
+      parentRoute: typeof StaffRoute
+    }
+    '/staff/help': {
+      id: '/staff/help'
+      path: '/help'
+      fullPath: '/staff/help'
+      preLoaderRoute: typeof StaffHelpRouteImport
       parentRoute: typeof StaffRoute
     }
     '/staff/growth': {
@@ -1055,6 +1074,7 @@ interface StaffRouteChildren {
   StaffEmailRoute: typeof StaffEmailRoute
   StaffFieldWorkRoute: typeof StaffFieldWorkRoute
   StaffGrowthRoute: typeof StaffGrowthRouteWithChildren
+  StaffHelpRoute: typeof StaffHelpRoute
   StaffInspectionReportsRoute: typeof StaffInspectionReportsRoute
   StaffInspectionsRoute: typeof StaffInspectionsRoute
   StaffLoginRoute: typeof StaffLoginRoute
@@ -1089,6 +1109,7 @@ const StaffRouteChildren: StaffRouteChildren = {
   StaffEmailRoute: StaffEmailRoute,
   StaffFieldWorkRoute: StaffFieldWorkRoute,
   StaffGrowthRoute: StaffGrowthRouteWithChildren,
+  StaffHelpRoute: StaffHelpRoute,
   StaffInspectionReportsRoute: StaffInspectionReportsRoute,
   StaffInspectionsRoute: StaffInspectionsRoute,
   StaffLoginRoute: StaffLoginRoute,

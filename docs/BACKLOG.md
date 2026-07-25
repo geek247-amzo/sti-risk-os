@@ -98,6 +98,33 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.
 
+## Stream G — Onboarding, Help Center, Design Polish & Bug Reporting
+
+*Status: **Scoped.** Discovery confirmed the existing implementation patterns and the remaining greenfield areas directly against the repository.*
+
+**Confirmed existing state:**
+- `src/components/staff/StaffGuide.tsx` contains the custom spotlight tour system with overview, workflow, and Steve guides, first-login localStorage gating, and Help-dropdown relaunch.
+- Staff navigation automatically exposes `data-guide="nav-{slug}"` targets, but authored content currently covers only a small subset of shipped routes.
+- No persistent browsable help center exists yet.
+- The design system uses shadcn new-york, Tailwind v4, oklch CSS tokens, dark theme, brand orange/blue tokens, and Inter; polish must extend these tokens rather than replace them.
+- No bug-report schema or screenshot capture dependency exists yet.
+- Microsoft Graph is the only outbound email integration; there is no SMTP, Resend, or SendGrid path.
+- `AGENTS.md` identifies Lovable.dev integration; do not force-push, rebase, or amend pushed commits.
+
+**Open decision before G5:** choose the designated STI Risk service mailbox for Microsoft Graph `sendMail` to `bugs@cloudmonkey.co.za`. Do not add a second email provider without an explicit decision.
+
+- **G1 — Help Center page:** Promote the existing tours into a persistent `/staff/help` browsable route with relaunchable spotlight guides and static reference content, reusing the existing guide data structure.
+- **G2 — Content buildout:** Add authored guides for shipped KPI, cash-flow, capability, partner, testimonial/referral, time-tracking, inspection, reporting/export, and future Yeastar features. Revisit on future releases.
+- **G3 — Design polish audit + pass:** Produce a short findings list covering empty/loading states, spacing, hover/focus, and token consistency before making bounded polish changes.
+- **G4 — Bug report capture UI:** Add DOM screenshot capture, comment, URL, reporter, submit flow, and a `bug_reports` table with screenshot reference, status, and timestamps.
+- **G5 — Bug report delivery:** Send reports to `bugs@cloudmonkey.co.za` through Microsoft Graph from the designated service mailbox, with screenshot attachment and report context. Depends on G4 and mailbox selection.
+
+**Sequence:** G1 → G2 (ongoing); G3 independent; G4 → G5.
+
+**Suggested assignment:** G1/G2 with the B-stream domain; G3 independent; G4/G5 as a separate implementation track.
+
+**G1 status:** implementation complete locally; pending deployment and live route verification.
+
 ## Close-out requirements
 
 - Run `npm run lint` and `npm run build`.

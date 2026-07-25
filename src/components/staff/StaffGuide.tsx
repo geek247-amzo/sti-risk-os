@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { Bot, Check, ChevronLeft, ChevronRight, CircleHelp, Route, X } from "lucide-react";
 
 export type GuideId = "overview" | "workflow" | "steve";
 
-type GuideStep = {
+export type GuideStep = {
   target?: string;
   eyebrow: string;
   title: string;
   body: string;
 };
 
-const guides: Record<GuideId, { label: string; description: string; icon: typeof Route; steps: GuideStep[] }> = {
+export const guides: Record<GuideId, { label: string; description: string; icon: typeof Route; steps: GuideStep[] }> = {
   overview: {
     label: "Staff portal overview",
     description: "Navigation, search and the operating workspace",
@@ -106,6 +107,13 @@ export function StaffHelpMenu({ onStart }: { onStart: (id: GuideId) => void }) {
             <div className="text-sm font-semibold text-foreground">Guided help</div>
             <div className="mt-0.5 text-xs text-muted-foreground">Choose a walkthrough. Your work will not be changed.</div>
           </div>
+          <Link
+            to="/staff/help"
+            className="mb-1 block rounded-md border border-border/60 px-3 py-2 text-xs font-medium text-brand-blue hover:bg-surface-2"
+            onClick={() => setOpen(false)}
+          >
+            Open Help Center
+          </Link>
           {Object.entries(guides).map(([id, guide]) => (
             <button
               key={id}

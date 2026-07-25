@@ -125,7 +125,7 @@ F3 remains outside the split and runs continuously at stream close, then as the 
 
 **G1 status:** **complete and live**, commit `f386947`. `/staff/help` is deployed and redirects unauthenticated users to staff login; production `/health` and `/ready` return 200 and the container is healthy. No new schema.
 
-**G2 status:** implementation complete locally; authored walkthroughs now cover KPI drill-down, finance/cash-flow alerts, capability checklist, partner development, time tracking, testimonial/referral triggers, inspections, and management reports/exports. Yeastar call-handling content remains deferred until E2 ships.
+**G2 status:** **complete and live**, commit `46651b4`. Authored walkthroughs now cover KPI drill-down, finance/cash-flow alerts, capability checklist, partner development, time tracking, testimonial/referral triggers, inspections, and management reports/exports. Yeastar call-handling content remains deferred until E2 ships. Build passed; `/health` and `/ready` return 200; `/staff/help` remains protected by the staff login redirect. No new schema.
 
 ## Close-out requirements
 

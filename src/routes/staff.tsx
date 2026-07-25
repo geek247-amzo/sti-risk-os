@@ -27,6 +27,7 @@ import {
   Wrench,
 } from "lucide-react";
 import { StaffGuide, StaffHelpMenu, type GuideId } from "@/components/staff/StaffGuide";
+import { BugReportDialog } from "@/components/staff/BugReportDialog";
 
 export const Route = createFileRoute("/staff")({
   component: StaffLayout,
@@ -162,6 +163,7 @@ function StaffLayout() {
   const [searchError, setSearchError] = useState("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeGuide, setActiveGuide] = useState<GuideId | null>(null);
+  const [bugReportOpen, setBugReportOpen] = useState(false);
 
   useEffect(() => {
     if (pathname === "/staff/login") return;
@@ -477,7 +479,7 @@ function StaffLayout() {
           <div className="hidden items-center gap-2 text-sm text-muted-foreground xl:flex">
             <span>{pageTitle(pathname)}</span>
           </div>
-          <StaffHelpMenu onStart={setActiveGuide} />
+          <StaffHelpMenu onStart={setActiveGuide} onReportBug={() => setBugReportOpen(true)} />
           <Link
             to="/"
             className="hidden text-xs text-muted-foreground hover:text-brand-blue md:inline"
@@ -491,6 +493,7 @@ function StaffLayout() {
         </main>
       </div>
       <StaffGuide request={activeGuide} onClose={() => setActiveGuide(null)} />
+      <BugReportDialog open={bugReportOpen} onClose={() => setBugReportOpen(false)} />
     </div>
   );
 }

@@ -12492,6 +12492,40 @@ async function staffChatUpload(request: Request) {
   return json({ attachments: saved }, { status: 201 });
 }
 
+async function createBugReport(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+
+  const form = await request.formData();
+  const comment = String(form.get("comment") ?? "").trim();
+  const pageUrl = String(form.get("pageUrl") ?? "").trim();
+  const screenshot = form.get("screenshot");
+  if (!comment) return json({ error: "Please describe what went wrong" }, { status: 400 });
+  if (comment.length > 10000) return json({ error: "Comment is too long" }, { status: 400 });
+  if (!pageUrl || pageUrl.length > 2048) return json({ error: "A valid page URL is required" }, { status: 400 });
+  if (!(screenshot instanceof File) || !screenshot.size) {
+    return json({ error: "Screenshot is required" }, { status: 400 });
+  }
+  if (!screenshot.type.startsWith("image/") || screenshot.size > 10 * 1024 * 1024) {
+    return json({ error: "Screenshot must be an image up to 10MB" }, { status: 400 });
+  }
+
+  const uploadDir = process.env.BUG_REPORT_UPLOAD_DIR || path.resolve(process.cwd(), "uploads/bug-reports");
+  await mkdir(uploadDir, { recursive: true });
+  const id = crypto.randomUUID();
+  const storedPath = path.join(uploadDir, `${id}.png`);
+  await writeFile(storedPath, Buffer.from(await screenshot.arrayBuffer()));
+
+  const result = await getPool().query(
+    `INSERT INTO bug_reports (id, screenshot_path, screenshot_mime_type, screenshot_size_bytes, comment, page_url, reported_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, status, created_at`,
+    [id, storedPath, screenshot.type, screenshot.size, comment, pageUrl, auth.user.id],
+  );
+  await audit(getPool(), "create_bug_report", "bug_report", id, { pageUrl }, auth.user);
+  return json({ bugReport: result.rows[0] }, { status: 201 });
+}
+
 type ChecklistResponseType = "pass_fail_na" | "pass_fail_defective" | "freeform" | "numeric";
 type InspectionRiskLevel = "low" | "medium" | "high" | "critical";
 
@@ -15632,6 +15666,7 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return staffChatSessions(request);
     if (request.method === "POST" && path === "/api/staff/chat/uploads")
       return staffChatUpload(request);
+    if (request.method === "POST" && path === "/api/bug-reports") return createBugReport(request);
     if (path === "/api/tasks" && (request.method === "GET" || request.method === "POST"))
       return workBoard(request);
     if (request.method === "GET" && path === "/api/schedule") return schedule(request);

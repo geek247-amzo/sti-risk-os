@@ -336,7 +336,13 @@ export const guides: Record<
 
 const STORAGE_KEY = "sti-risk-staff-guide-completed";
 
-export function StaffHelpMenu({ onStart }: { onStart: (id: GuideId) => void }) {
+export function StaffHelpMenu({
+  onStart,
+  onReportBug,
+}: {
+  onStart: (id: GuideId) => void;
+  onReportBug: () => void;
+}) {
   const [open, setOpen] = useState(false);
 
   useEffect(() => {
@@ -373,6 +379,16 @@ export function StaffHelpMenu({ onStart }: { onStart: (id: GuideId) => void }) {
           >
             Open Help Center
           </Link>
+          <button
+            type="button"
+            className="mb-1 flex w-full items-center gap-2 rounded-md border border-dashed border-brand-orange/50 px-3 py-2 text-left text-xs font-medium text-brand-orange hover:bg-orange-50"
+            onClick={() => {
+              setOpen(false);
+              onReportBug();
+            }}
+          >
+            Report a bug
+          </button>
           {Object.entries(guides).map(([id, guide]) => (
             <button
               key={id}

@@ -1,5 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { BookOpen, CircleHelp, ExternalLink, PlayCircle, Route as RouteIcon, ShieldCheck } from "lucide-react";
+import {
+  BookOpen,
+  CircleHelp,
+  ExternalLink,
+  PlayCircle,
+  Route as RouteIcon,
+  ShieldCheck,
+} from "lucide-react";
 import { useState } from "react";
 import { StaffGuide, guides, type GuideId } from "@/components/staff/StaffGuide";
 
@@ -10,22 +17,26 @@ export const Route = createFileRoute("/staff/help")({
 const referenceTopics = [
   {
     title: "Reports and KPI drill-down",
-    description: "Generate daily, weekly, or monthly snapshots, then follow KPI tiles to the records behind each number. Export CSV or print the generated report.",
+    description:
+      "Generate daily, weekly, or monthly snapshots, then follow KPI tiles to the records behind each number. Export CSV or print the generated report.",
     href: "/staff/reports",
   },
   {
     title: "Inspections and survey reports",
-    description: "Capture structured findings, evidence, remediation, risk levels, and sign-off-ready reports. Public inspection links keep evidence behind token-scoped URLs.",
+    description:
+      "Capture structured findings, evidence, remediation, risk levels, and sign-off-ready reports. Public inspection links keep evidence behind token-scoped URLs.",
     href: "/staff/inspections",
   },
   {
     title: "Tasks and approvals",
-    description: "Use Work for follow-ups, capability actions, and operational queues. External messages and sensitive financial actions remain approval-gated.",
+    description:
+      "Use Work for follow-ups, capability actions, and operational queues. External messages and sensitive financial actions remain approval-gated.",
     href: "/staff/work",
   },
   {
     title: "Steve AI",
-    description: "Ask Steve to search and summarise indexed operating context. Review and approve any external or consequential action before it is sent.",
+    description:
+      "Ask Steve to search and summarise indexed operating context. Review and approve any external or consequential action before it is sent.",
     href: "/staff/steve",
   },
 ];
@@ -42,7 +53,8 @@ function StaffHelpCenter() {
           </div>
           <h1 className="mt-2 text-3xl font-bold tracking-tight">Help Center</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-            Browse the operating guides or start a spotlight walkthrough. This page is a reference point for the shipped platform and will grow with each release.
+            Browse the operating guides or start a spotlight walkthrough. This page is a reference
+            point for the shipped platform and will grow with each release.
           </p>
         </div>
         <div className="flex items-center gap-2 rounded-md border border-border/60 bg-white px-3 py-2 text-xs text-muted-foreground">
@@ -57,7 +69,10 @@ function StaffHelpCenter() {
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
           {Object.entries(guides).map(([id, guide]) => (
-            <article key={id} className="flex flex-col rounded-lg border border-border/60 bg-white p-5 shadow-sm">
+            <article
+              key={id}
+              className="flex flex-col rounded-lg border border-border/60 bg-white p-5 shadow-sm"
+            >
               <div className="flex items-start justify-between gap-3">
                 <span className="grid h-10 w-10 place-items-center rounded-md bg-blue-50 text-brand-blue">
                   <guide.icon className="h-5 w-5" />
@@ -65,7 +80,9 @@ function StaffHelpCenter() {
                 <span className="text-xs text-muted-foreground">{guide.steps.length} steps</span>
               </div>
               <h3 className="mt-4 font-semibold">{guide.label}</h3>
-              <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">{guide.description}</p>
+              <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">
+                {guide.description}
+              </p>
               <button
                 type="button"
                 className="mt-5 inline-flex items-center justify-center gap-2 rounded-md bg-brand-blue px-3 py-2 text-sm font-medium text-white hover:opacity-90"
@@ -103,7 +120,8 @@ function StaffHelpCenter() {
       <section className="rounded-lg border border-dashed border-border bg-surface-2 p-5">
         <h2 className="font-semibold">Need more help?</h2>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          If a workflow is unclear or a page behaves unexpectedly, capture the page URL and describe the steps that led there. Bug-report capture will be added in Stream G4.
+          If a workflow is unclear or a page behaves unexpectedly, capture the page URL and describe
+          the steps that led there. Bug-report capture will be added in Stream G4.
         </p>
       </section>
 

@@ -16,7 +16,7 @@ Active: B3 delivery automation is deferred; email is the confirmed channel. Gene
 
 Unblocked and not started: none in Stream D. C1, D-1, D-2, and D-3 are complete.
 
-Staged: E2 recording/CDR ingestion implementation, waiting on Yeastar secret rotation and portal retention confirmation. E1 remains online and live.
+E2 recording/CDR ingestion is live. E1 remains online and live.
 
 Deferred: F3 final verification, until the remaining streams close.
 
@@ -78,7 +78,7 @@ E1 discovery is complete. The PBX is reachable and authenticated with the server
 Confirmed sequence: E1 authentication → E2 recordings/CDR → E3 Gemini 2.5 Flash transcription → E4 customer matching/tagging rules → E5/E6 staff call and tagging views → E7 customer call history → E8 transcript RAG indexing.
 
 - E1 — **discovery complete**, commit `546f08e`. Server env vars are present, token exchange succeeds, access-token expiry is 30 minutes, refresh-token expiry is 24 hours, and low-risk authenticated calls succeed. No credentials are committed.
-- E2 — **in progress**. Discovery is complete: this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`, so ingestion uses scheduled pull/reconciliation. The recording list and `cdr/list` are live. Retention is storage-driven rather than a fixed preservation period, so the implementation uses a configurable 20-minute default poll (bounded to 15–30 minutes) and a configurable 120-minute idempotent backfill window. Certificate pinning is required; TLS verification is not disabled. Current implementation stores CDR and recording metadata in `yeastar_calls`; audio download, transcription, matching, tagging, and staff/customer views remain E3–E8.
+- E2 — **complete and live**, commits `4668973`, `77d2097`, and `165d097`. Discovery confirmed this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`, so ingestion uses scheduled pull/reconciliation. The production poller runs in the single homepage container on a configurable 20-minute default interval (bounded to 15–30 minutes), uses a configurable 120-minute idempotent backfill window, and stores CDR plus recording metadata in `yeastar_calls`. The initial retained-record backfill imported 48 calls from 51 CDRs and 20 recordings; the follow-up poll was idempotent. Certificate chain trust and SHA-256 pinning are enforced; TLS verification is not disabled. Audio download/transcription, matching, tagging, and staff/customer views remain E3–E8.
 
 Do not guess push/pull behavior, authentication, number matching, personal-call retention, or tagging permissions.
 
@@ -94,7 +94,7 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 |---|---|---|
 | Agent 1 | B3 delivery automation → B4 | Email delivery remains deferred in the current go-live scope |
 | Agent 2 | C1 / D | C1 and Stream D complete |
-| Agent 3 | E2 → E8 | E1 online; E2 pull ingestion in progress, then transcription/matching/views |
+| Agent 3 | E2 → E8 | E1 and E2 live; next is transcription/matching/views |
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.
 

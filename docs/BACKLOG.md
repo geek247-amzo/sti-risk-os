@@ -129,6 +129,8 @@ F3 remains outside the split and runs continuously at stream close, then as the 
 
 **G3 audit findings and pass:** **complete and live**, commit `32df8ad`. The token system and hover coverage were consistent overall, but keyboard focus treatment was inconsistent, inspection loading was spinner-only, and finance empty states varied. Added shared token-aligned `focus-visible` treatment plus reusable loading/empty primitives, applied to inspection loading and the finance invoice empty state. Build passed; `/health` and `/ready` return 200; `/staff/help` remains protected; container healthy. No restyle, schema, or workflow changes.
 
+**G4 status:** **complete and live**, commit `a30e587`. Added the Help-menu bug-report dialog with DOM screenshot capture via `html2canvas`, comment and current URL capture, authenticated multipart submission, local screenshot storage, audit logging, and migration 040 creating `bug_reports`. Live verification: migration applied, `/health` 200, `/ready` 200, `/staff/help` redirects unauthenticated users to login, and `POST /api/bug-reports` returns 401 without authentication. Manual browser verification remains the final operational check: open Help → Report a bug, submit a comment, and confirm the record and screenshot are stored. G5 delivery is deliberately not included.
+
 ## Close-out requirements
 
 - Run `npm run lint` and `npm run build`.

@@ -237,7 +237,7 @@ function StaffInspections() {
     finally { setBusy(""); }
   }
 
-  if (loading) return <div className="grid min-h-[60vh] place-items-center"><Loader2 className="h-6 w-6 animate-spin" /></div>;
+  if (loading) return <div className="staff-loading-state min-h-[60vh]"><Loader2 className="h-6 w-6 animate-spin" /><span className="text-sm">Loading inspection workspace…</span></div>;
 
   return (
     <div className="mx-auto max-w-5xl overflow-x-hidden space-y-5 px-3 pb-12 sm:px-4">

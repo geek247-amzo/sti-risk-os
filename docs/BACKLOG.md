@@ -12,11 +12,11 @@ Complete and live: F1, F2, C2, D-4, A1, A2, A3, B1, C1, D-1, D-2, and D-3.
 
 Complete and live: B2 — KPI drill-down UI.
 
-Active: B3 — channel-neutral management report generation. B4 is complete for the generated snapshot export layer.
+Active: B3 delivery automation is deferred; email is the confirmed channel. Generated report snapshots remain live. B4 is complete for the export layer.
 
 Unblocked and not started: none in Stream D. C1, D-1, D-2, and D-3 are complete.
 
-Staged: E2 recording/CDR ingestion implementation, waiting on Yeastar secret rotation and portal retention confirmation.
+Staged: E2 recording/CDR ingestion implementation, waiting on Yeastar secret rotation and portal retention confirmation. E1 remains online and live.
 
 Deferred: F3 final verification, until the remaining streams close.
 
@@ -54,7 +54,7 @@ Status: **in progress**.
 
 - B1 — **complete**, commit `9811c0e`. Live KPI aggregates cover collected/invoiced revenue, open opportunities, issued quote value, quote win rate, and open/completed service delivery. CSAT is explicitly reported as unavailable because no CSAT schema was found.
 - B2 — **complete**, commit `f104fa4`. KPI tiles now link directly to the underlying billing, CRM, quotations, and work-record surfaces. No new schema or reporting endpoint was needed; the existing KPI data layer and staff routes are reused.
-- B3 — **in progress**, commit `0b50a11`. Added protected daily/weekly/monthly management report generation over existing CRM, billing, quotation, and work-item data. Delivery is deliberately channel-neutral until email versus WhatsApp is confirmed; no external message is sent automatically.
+- B3 — **snapshots live; email delivery decision confirmed**, commit `0b50a11`. Added protected daily/weekly/monthly management report generation over existing CRM, billing, quotation, and work-item data. Email is the selected future delivery channel; automatic sending is not enabled in the current go-live scope.
 - B4 — **complete and live**, commit `abbefe0`. Generated management snapshots support Excel-compatible CSV export and browser Print / Save PDF using the existing print workflow. No export library or schema was added. Production verification: `/health` 200, `/ready` 200 with DB ready, protected management API 401 without authentication, container healthy.
 
 Sequence: B1 → B2 → B3 → B4.
@@ -78,7 +78,7 @@ E1 discovery is complete. The PBX is reachable and authenticated with the server
 Confirmed sequence: E1 authentication → E2 recordings/CDR → E3 Gemini 2.5 Flash transcription → E4 customer matching/tagging rules → E5/E6 staff call and tagging views → E7 customer call history → E8 transcript RAG indexing.
 
 - E1 — **discovery complete**, commit `546f08e`. Server env vars are present, token exchange succeeds, access-token expiry is 30 minutes, refresh-token expiry is 24 hours, and low-risk authenticated calls succeed. No credentials are committed.
-- E2 — **discovery complete, implementation next**. Yeastar documents webhook/event push for call records, but this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`; therefore ingestion must support scheduled pull/reconciliation first, with webhook delivery treated as an optional optimization only after portal configuration is confirmed. The recording list is live and currently reports 20 recordings. Retention is not a fixed API guarantee: PBX auto-cleanup removes recordings by configured preservation days or storage threshold, so the polling interval and initial backfill window must be configurable and the deployed PBX retention setting must be confirmed before production scheduling.
+- E2 — **deferred for later go-live phase**. Discovery is complete: this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`, so ingestion must support scheduled pull/reconciliation first. The recording list is live and currently reports 20 recordings. Retention is governed by PBX auto-cleanup settings and still needs portal confirmation; credential rotation is also pending. No recording/CDR ingestion is enabled yet.
 
 Do not guess push/pull behavior, authentication, number matching, personal-call retention, or tagging permissions.
 
@@ -92,9 +92,9 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 
 | Agent | Assignment | Status |
 |---|---|---|
-| Agent 1 | B3 → B4 | Next B-stream owner |
+| Agent 1 | B3 delivery automation → B4 | Email delivery remains deferred in the current go-live scope |
 | Agent 2 | C1 / D | C1 and Stream D complete |
-| Agent 3 | E2 → E8 | E1 discovery complete; ingestion next |
+| Agent 3 | E2 → E8 | E1 online; ingestion deferred until credential rotation and retention confirmation |
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.
 

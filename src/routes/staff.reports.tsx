@@ -73,6 +73,36 @@ function Reports() {
     }
   }
 
+  function exportManagementReportCsv() {
+    if (!managementReport) return;
+    const rows = [
+      ["metric", "value"],
+      ["period", managementReport.period],
+      ["period_start", managementReport.periodStart],
+      ["period_end", managementReport.periodEnd],
+      ["quoted_value_cents", managementReport.revenue.quoted_value_cents ?? 0],
+      ["invoiced_value_cents", managementReport.revenue.invoiced_value_cents ?? 0],
+      ["collected_value_cents", managementReport.revenue.collected_value_cents ?? 0],
+      ["opportunities", managementReport.opportunities.count ?? 0],
+      ["opportunity_value_cents", managementReport.opportunities.value_cents ?? 0],
+      ["quotes_issued", managementReport.quotations.issued ?? 0],
+      ["quotes_issued_value_cents", managementReport.quotations.issued_value_cents ?? 0],
+      ["quote_win_rate", managementReport.quotations.win_rate ?? ""],
+      ["work_created", managementReport.serviceDelivery.created ?? 0],
+      ["work_completed", managementReport.serviceDelivery.completed ?? 0],
+      ["work_open", managementReport.serviceDelivery.open ?? 0],
+    ];
+    const csv = rows
+      .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(","))
+      .join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `sti-risk-management-${managementReport.period}-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   const maxMonth = Math.max(1, ...(data?.months ?? []).map((month) => month.deals));
   const totalDeals = data?.statuses.reduce((sum, status) => sum + status.deals, 0) ?? 0;
   const openValue =
@@ -102,8 +132,9 @@ function Reports() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-6 print-page">
+      <style>{`@media print { .no-print { display:none !important } .print-page { max-width:none !important; padding:0 !important } .management-report { border-top:0 !important } }`}</style>
+      <div className="no-print flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Insights</div>
           <h1 className="text-2xl font-bold">Reports</h1>
@@ -215,10 +246,28 @@ function Reports() {
             >
               {reportLoading ? "Generating…" : "Generate report"}
             </button>
+            {managementReport && (
+              <>
+                <button
+                  type="button"
+                  onClick={exportManagementReportCsv}
+                  className="rounded-md border border-border px-3 py-2 text-sm hover:bg-surface-2"
+                >
+                  Excel CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="rounded-md border border-border px-3 py-2 text-sm hover:bg-surface-2 print:hidden"
+                >
+                  Print / PDF
+                </button>
+              </>
+            )}
           </div>
         </div>
         {managementReport && (
-          <div className="mt-5 space-y-3 border-t border-border/60 pt-4">
+          <div className="management-report mt-5 space-y-3 border-t border-border/60 pt-4">
             <div className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground">
               <span>
                 {managementReport.periodStart.slice(0, 10)} → {managementReport.periodEnd.slice(0, 10)}

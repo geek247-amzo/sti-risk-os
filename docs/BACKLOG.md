@@ -78,7 +78,8 @@ E1 discovery is complete. The PBX is reachable and authenticated with the server
 Confirmed sequence: E1 authentication → E2 recordings/CDR → E3 Gemini 2.5 Flash transcription → E4 customer matching/tagging rules → E5/E6 staff call and tagging views → E7 customer call history → E8 transcript RAG indexing.
 
 - E1 — **discovery complete**, commit `546f08e`. Server env vars are present, token exchange succeeds, access-token expiry is 30 minutes, refresh-token expiry is 24 hours, and low-risk authenticated calls succeed. No credentials are committed.
-- E2 — **complete and live**, commits `4668973`, `77d2097`, and `165d097`. Discovery confirmed this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`, so ingestion uses scheduled pull/reconciliation. The production poller runs in the single homepage container on a configurable 20-minute default interval (bounded to 15–30 minutes), uses a configurable 120-minute idempotent backfill window, and stores CDR plus recording metadata in `yeastar_calls`. The initial retained-record backfill imported 48 calls from 51 CDRs and 20 recordings; the follow-up poll was idempotent. Certificate chain trust and SHA-256 pinning are enforced; TLS verification is not disabled. Audio download/transcription, matching, tagging, and staff/customer views remain E3–E8.
+- E2 — **complete and live**, commits `4668973`, `77d2097`, and `165d097`. Discovery confirmed this PBX returned `INTERFACE NOT EXISTED` for `webhook/query` under both `openapi/v1.0` and `openapi/v2.0`, so ingestion uses scheduled pull/reconciliation. The production poller runs in the single homepage container on a configurable 20-minute default interval (bounded to 15–30 minutes), uses a configurable 120-minute idempotent backfill window, and stores CDR plus recording metadata in `yeastar_calls`. The initial retained-record backfill imported 48 calls from 51 CDRs and 20 recordings; the follow-up poll was idempotent. Certificate chain trust and SHA-256 pinning are enforced; TLS verification is not disabled.
+- E3 — **in progress**, commit `5f2015b`. Recordings are downloaded to the persistent uploads volume and sent to Gemini 2.5 Flash with retryable transcription status. The authenticated `/staff/voice` panel now exposes imported CDRs, recording metadata, transcript text, and transcription status. Initial live verification completed 6 transcripts; 4 were rate-limited by Gemini with HTTP 429 and remain retryable, and the remaining retained recordings are pending. Customer matching/tagging and wider customer/staff views remain E4–E7.
 
 Do not guess push/pull behavior, authentication, number matching, personal-call retention, or tagging permissions.
 
@@ -94,7 +95,7 @@ Do not guess push/pull behavior, authentication, number matching, personal-call 
 |---|---|---|
 | Agent 1 | B3 delivery automation → B4 | Email delivery remains deferred in the current go-live scope |
 | Agent 2 | C1 / D | C1 and Stream D complete |
-| Agent 3 | E2 → E8 | E1 and E2 live; next is transcription/matching/views |
+| Agent 3 | E2 → E8 | E1/E2 live; E3 transcription and `/staff/voice` active, then matching/views |
 
 F3 remains outside the split and runs continuously at stream close, then as the final pass.
 

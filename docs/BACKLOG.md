@@ -12,7 +12,7 @@ Complete and live: F1, F2, C2, D-4, A1, A2, A3, B1, C1, D-1, D-2, and D-3.
 
 Complete and live: B2 — KPI drill-down UI.
 
-Queued: B3 — automated management reporting; B4 — PDF/Excel export.
+Active: B3 — channel-neutral management report generation. B4 — PDF/Excel export remains queued.
 
 Unblocked and not started: none in Stream D. C1, D-1, D-2, and D-3 are complete.
 
@@ -54,7 +54,7 @@ Status: **in progress**.
 
 - B1 — **complete**, commit `9811c0e`. Live KPI aggregates cover collected/invoiced revenue, open opportunities, issued quote value, quote win rate, and open/completed service delivery. CSAT is explicitly reported as unavailable because no CSAT schema was found.
 - B2 — **complete**, commit `f104fa4`. KPI tiles now link directly to the underlying billing, CRM, quotations, and work-record surfaces. No new schema or reporting endpoint was needed; the existing KPI data layer and staff routes are reused.
-- B3 — **queued**. Daily/weekly/monthly management reporting; confirm delivery channel before implementing email or WhatsApp output.
+- B3 — **in progress**, current commit. Added protected daily/weekly/monthly management report generation over existing CRM, billing, quotation, and work-item data. Delivery is deliberately channel-neutral until email versus WhatsApp is confirmed; no external message is sent automatically.
 - B4 — **queued**. PDF/Excel export for KPI dashboards and management reports.
 
 Sequence: B1 → B2 → B3 → B4.

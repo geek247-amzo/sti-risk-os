@@ -9086,6 +9086,77 @@ async function reportsSummary(request: Request) {
   });
 }
 
+async function managementReport(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const url = new URL(request.url);
+  const requestedPeriod = url.searchParams.get("period") ?? "month";
+  if (!["day", "week", "month"].includes(requestedPeriod)) {
+    return json({ error: "Period must be day, week, or month" }, { status: 400 });
+  }
+  const period = requestedPeriod as "day" | "week" | "month";
+  const range = await getPool().query(
+    `SELECT date_trunc($1, now()) AS period_start, now() AS period_end`,
+    [period],
+  );
+  const periodStart = range.rows[0].period_start;
+  const periodEnd = range.rows[0].period_end;
+  const [revenue, opportunities, quotations, serviceDelivery] = await Promise.all([
+    getPool().query(
+      `SELECT
+         COALESCE((SELECT sum(total_value_cents)::int FROM quotes WHERE created_at >= $1 AND created_at < $2 AND status IN ('sent_to_client', 'accepted')), 0) AS quoted_value_cents,
+         COALESCE((SELECT sum(total_cents)::int FROM invoices WHERE created_at >= $1 AND created_at < $2 AND status <> 'void'), 0) AS invoiced_value_cents,
+         COALESCE((SELECT sum(amount_cents)::int FROM invoice_payments WHERE paid_at >= $1 AND paid_at < $2), 0) AS collected_value_cents`,
+      [periodStart, periodEnd],
+    ),
+    getPool().query(
+      `SELECT count(*)::int AS count, COALESCE(sum(value_cents)::int, 0) AS value_cents
+       FROM deals
+       WHERE created_at >= $1 AND created_at < $2
+         AND status NOT IN ('cancelled')`,
+      [periodStart, periodEnd],
+    ),
+    getPool().query(
+      `SELECT
+         count(*) FILTER (WHERE status IN ('sent_to_client', 'accepted', 'rejected'))::int AS issued,
+         COALESCE(sum(total_value_cents) FILTER (WHERE status IN ('sent_to_client', 'accepted', 'rejected'))::int, 0) AS issued_value_cents,
+         count(*) FILTER (WHERE status = 'accepted')::int AS won,
+         count(*) FILTER (WHERE status IN ('accepted', 'rejected'))::int AS decided
+       FROM quotes
+       WHERE created_at >= $1 AND created_at < $2`,
+      [periodStart, periodEnd],
+    ),
+    getPool().query(
+      `SELECT
+         count(*)::int AS created,
+         count(*) FILTER (WHERE status IN ('complete', 'invoiced'))::int AS completed,
+         count(*) FILTER (WHERE status NOT IN ('complete', 'invoiced', 'cancelled'))::int AS open
+       FROM work_items
+       WHERE created_at >= $1 AND created_at < $2`,
+      [periodStart, periodEnd],
+    ),
+  ]);
+  const quoteMetrics = quotations.rows[0] ?? {};
+  return json({
+    period,
+    periodStart,
+    periodEnd,
+    generatedAt: new Date().toISOString(),
+    generatedBy: auth.user.name,
+    revenue: revenue.rows[0] ?? {},
+    opportunities: opportunities.rows[0] ?? {},
+    quotations: {
+      ...quoteMetrics,
+      win_rate:
+        Number(quoteMetrics.decided ?? 0) > 0
+          ? Number(quoteMetrics.won ?? 0) / Number(quoteMetrics.decided)
+          : null,
+    },
+    serviceDelivery: serviceDelivery.rows[0] ?? {},
+    delivery: { status: "channel_not_configured", channels: ["email", "whatsapp"] },
+  });
+}
+
 type InspectionFinding = {
   location?: string | null;
   issueDescription: string;
@@ -15568,6 +15639,7 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
     if (request.method === "POST" && path === "/api/steve/ask") return steveAsk(request);
     if (request.method === "POST" && path === "/api/steve/actions") return steveAction(request);
     if (request.method === "GET" && path === "/api/reports/summary") return reportsSummary(request);
+    if (request.method === "GET" && path === "/api/reports/management") return managementReport(request);
     if (request.method === "GET" && path === "/api/settings/summary")
       return settingsSummary(request);
     if (request.method === "GET" && path === "/api/settings/whatsapp-operations")

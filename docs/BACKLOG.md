@@ -54,8 +54,8 @@ Status: **in progress**.
 
 - B1 — **complete**, commit `9811c0e`. Live KPI aggregates cover collected/invoiced revenue, open opportunities, issued quote value, quote win rate, and open/completed service delivery. CSAT is explicitly reported as unavailable because no CSAT schema was found.
 - B2 — **complete**, commit `f104fa4`. KPI tiles now link directly to the underlying billing, CRM, quotations, and work-record surfaces. No new schema or reporting endpoint was needed; the existing KPI data layer and staff routes are reused.
-- B3 — **in progress**, current commit. Added protected daily/weekly/monthly management report generation over existing CRM, billing, quotation, and work-item data. Delivery is deliberately channel-neutral until email versus WhatsApp is confirmed; no external message is sent automatically.
-- B4 — **complete**, current commit. Generated management snapshots support Excel-compatible CSV export and browser Print / Save PDF using the existing print workflow. No export library or schema was added.
+- B3 — **in progress**, commit `0b50a11`. Added protected daily/weekly/monthly management report generation over existing CRM, billing, quotation, and work-item data. Delivery is deliberately channel-neutral until email versus WhatsApp is confirmed; no external message is sent automatically.
+- B4 — **complete and live**, commit `abbefe0`. Generated management snapshots support Excel-compatible CSV export and browser Print / Save PDF using the existing print workflow. No export library or schema was added. Production verification: `/health` 200, `/ready` 200 with DB ready, protected management API 401 without authentication, container healthy.
 
 Sequence: B1 → B2 → B3 → B4.
 

@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
 import https from "node:https";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 import type pg from "pg";
 
 type JsonRecord = Record<string, unknown>;
@@ -110,6 +112,128 @@ async function getAccessToken() {
     throw new Error(`Yeastar token exchange failed: ${String(payload.errmsg ?? result.status)}`);
   }
   return token;
+}
+
+async function geminiTranscribe(audio: Buffer, mimeType: string) {
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured");
+  const model = process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash";
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text: "Transcribe this business phone call accurately. Identify speakers when possible, preserve names, numbers, commitments and action items, and return only the transcript text.",
+              },
+              { inline_data: { mime_type: mimeType, data: audio.toString("base64") } },
+            ],
+          },
+        ],
+      }),
+    },
+  );
+  const payload = (await response.json()) as JsonRecord;
+  if (!response.ok) throw new Error(`Gemini transcription failed (${response.status})`);
+  const candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+  const first = candidates[0] as JsonRecord | undefined;
+  const content = first?.content as JsonRecord | undefined;
+  const parts = Array.isArray(content?.parts) ? content.parts : [];
+  const transcript = parts
+    .map((part) =>
+      part && typeof part === "object" ? String((part as JsonRecord).text ?? "") : "",
+    )
+    .join("\n")
+    .trim();
+  if (!transcript) throw new Error("Gemini returned an empty transcript");
+  return { transcript, model };
+}
+
+async function downloadRecording(token: string, recordingId: string, fileName: string) {
+  const download = await apiGet("recording/download", { access_token: token, id: recordingId });
+  const resource =
+    typeof (download as JsonRecord).download_resource_url === "string"
+      ? String((download as JsonRecord).download_resource_url)
+      : "";
+  if (!resource) throw new Error("Yeastar returned no recording download URL");
+  const url = new URL(resource, `${apiBase()}/`);
+  url.searchParams.set("access_token", token);
+  const result = await requestText(url, { headers: { "User-Agent": "sti-risk-os/1.0" } });
+  if (result.status < 200 || result.status >= 300 || result.body.length === 0) {
+    throw new Error(`Yeastar recording download failed (${result.status})`);
+  }
+  const safeName = fileName.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const directory = process.env.YEASTAR_AUDIO_DIR || "/app/uploads/yeastar";
+  await mkdir(directory, { recursive: true });
+  const filePath = path.join(directory, safeName);
+  await writeFile(filePath, result.body, { flag: "wx" }).catch(async (error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+  });
+  return {
+    filePath,
+    bytes: result.body.length,
+    mimeType: result.headers["content-type"]?.split(";")[0] || "audio/wav",
+  };
+}
+
+async function transcribePendingCalls(pool: pg.Pool) {
+  const maxBytes = Number(process.env.YEASTAR_TRANSCRIPTION_MAX_BYTES ?? 15 * 1024 * 1024);
+  const rows = await pool.query(
+    `SELECT id, provider_recording_id, recording_file, recording_size_bytes
+     FROM yeastar_calls
+     WHERE provider_recording_id IS NOT NULL
+       AND recording_file IS NOT NULL
+       AND transcript IS NULL
+       AND transcription_status IN ('pending', 'failed')
+       AND COALESCE(recording_size_bytes, 0) <= $1
+     ORDER BY call_time ASC NULLS LAST
+     LIMIT 10`,
+    [maxBytes],
+  );
+  if (rows.rowCount === 0) return { attempted: 0, completed: 0 };
+  const token = await getAccessToken();
+  let completed = 0;
+  for (const row of rows.rows) {
+    await pool.query(
+      "UPDATE yeastar_calls SET transcription_status = 'processing', transcription_error = NULL WHERE id = $1",
+      [row.id],
+    );
+    try {
+      const downloaded = await downloadRecording(
+        token,
+        row.provider_recording_id,
+        row.recording_file,
+      );
+      const result = await geminiTranscribe(
+        await import("node:fs/promises").then((fs) => fs.readFile(downloaded.filePath)),
+        downloaded.mimeType,
+      );
+      await pool.query(
+        `UPDATE yeastar_calls SET audio_path = $1, audio_mime_type = $2, audio_size_bytes = $3,
+         transcript = $4, transcript_model = $5, transcribed_at = now(), transcription_status = 'completed', updated_at = now()
+         WHERE id = $6`,
+        [
+          downloaded.filePath,
+          downloaded.mimeType,
+          downloaded.bytes,
+          result.transcript,
+          result.model,
+          row.id,
+        ],
+      );
+      completed += 1;
+    } catch (error) {
+      await pool.query(
+        "UPDATE yeastar_calls SET transcription_status = 'failed', transcription_error = $1, updated_at = now() WHERE id = $2",
+        [error instanceof Error ? error.message : "Transcription failed", row.id],
+      );
+    }
+  }
+  return { attempted: rows.rowCount, completed };
 }
 
 function records(value: unknown): JsonRecord[] {
@@ -264,7 +388,8 @@ export async function runYeastarPoll(pool: pg.Pool) {
         [JSON.stringify(result), logId],
       );
       await client.query("COMMIT");
-      return { ok: true, ...result, startedAt: startedAt.toISOString() };
+      const transcription = await transcribePendingCalls(pool);
+      return { ok: true, ...result, transcription, startedAt: startedAt.toISOString() };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       if (logId) {

@@ -155,6 +155,24 @@ async function yeastarPoll(request: Request) {
   return json(await runYeastarPoll(getPool()));
 }
 
+async function yeastarCalls(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff", "viewer"]);
+  if (auth.response) return auth.response;
+  const url = new URL(request.url);
+  const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 100)));
+  const rows = await getPool().query(
+    `SELECT id, provider_uid, call_time, call_type, call_from, call_from_name, call_from_number,
+            call_to, call_to_name, call_to_number, disposition, duration_seconds, recording_file,
+            recording_size_bytes, transcription_status, transcript, transcript_model, transcribed_at,
+            transcription_error, created_at
+     FROM yeastar_calls
+     ORDER BY call_time DESC NULLS LAST, created_at DESC
+     LIMIT $1`,
+    [limit],
+  );
+  return json({ calls: rows.rows });
+}
+
 function parseCookies(request: Request) {
   const header = request.headers.get("cookie") ?? "";
   const cookies = new Map<string, string>();
@@ -15378,6 +15396,8 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
 
     if (request.method === "POST" && path === "/api/integrations/yeastar/poll")
       return yeastarPoll(request);
+    if (request.method === "GET" && path === "/api/integrations/yeastar/calls")
+      return yeastarCalls(request);
 
     if (request.method === "POST" && path === "/api/internal/rag/search")
       return internalRagSearch(request);

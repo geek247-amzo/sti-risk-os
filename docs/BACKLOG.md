@@ -123,7 +123,7 @@ F3 remains outside the split and runs continuously at stream close, then as the 
 
 **Suggested assignment:** G1/G2 with the B-stream domain; G3 independent; G4/G5 as a separate implementation track.
 
-**G1 status:** implementation complete locally; pending deployment and live route verification.
+**G1 status:** **complete and live**, commit `f386947`. `/staff/help` is deployed and redirects unauthenticated users to staff login; production `/health` and `/ready` return 200 and the container is healthy. No new schema.
 
 ## Close-out requirements
 

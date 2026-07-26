@@ -289,7 +289,7 @@ async function syncYeastarExtensions(pool: pg.Pool, token: string) {
       const extensionNumber =
         stringValue(extension, "number") ?? stringValue(extension, "extension");
       if (!extensionNumber) continue;
-      const email = stringValue(extension, "email");
+      const email = stringValue(extension, "email_addr") ?? stringValue(extension, "email");
       await client.query(
         `INSERT INTO yeastar_extension_mappings
            (provider_extension, provider_name, provider_email, app_user_id, last_synced_at, updated_at)
@@ -301,7 +301,11 @@ async function syncYeastarExtensions(pool: pg.Pool, token: string) {
            provider_email = EXCLUDED.provider_email,
            app_user_id = EXCLUDED.app_user_id,
            last_synced_at = now(), updated_at = now()`,
-        [extensionNumber, stringValue(extension, "name"), email],
+        [
+          extensionNumber,
+          stringValue(extension, "caller_id_name") ?? stringValue(extension, "name"),
+          email,
+        ],
       );
     }
     await client.query("COMMIT");

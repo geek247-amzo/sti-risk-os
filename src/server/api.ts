@@ -10666,12 +10666,16 @@ async function semanticSearch(request: Request) {
   const body = await readJson(request);
   const q = requireText(body.query, "Query");
   const result = await getPool().query(
-    `SELECT entity_type, entity_id, content, metadata
-     FROM embedding_documents
-     WHERE search_vector @@ plainto_tsquery('english', $1)
-     ORDER BY ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
+    `SELECT ed.entity_type, ed.entity_id, ed.content, ed.metadata
+     FROM embedding_documents ed
+     WHERE ed.search_vector @@ plainto_tsquery('english', $1)
+       AND ($2::text = 'admin'
+         OR ed.entity_type <> 'yeastar_call'
+         OR ed.metadata->>'tagStatus' = 'matched'
+         OR ed.metadata->>'staffUserId' = $3::text)
+     ORDER BY ts_rank(ed.search_vector, plainto_tsquery('english', $1)) DESC
      LIMIT 12`,
-    [q],
+    [q, auth.user.role, auth.user.id],
   );
   return json({ ok: true, results: result.rows });
 }
@@ -11006,14 +11010,18 @@ async function logWhatsAppInbound(
   }
 }
 
-async function whatsappContext(message: string) {
+async function whatsappContext(message: string, user: User) {
   const result = await getPool().query(
-    `SELECT entity_type, entity_id, content, metadata
-     FROM embedding_documents
-     WHERE search_vector @@ plainto_tsquery('english', $1)
-     ORDER BY ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
+    `SELECT ed.entity_type, ed.entity_id, ed.content, ed.metadata
+     FROM embedding_documents ed
+     WHERE ed.search_vector @@ plainto_tsquery('english', $1)
+       AND ($2::text = 'admin'
+         OR ed.entity_type <> 'yeastar_call'
+         OR ed.metadata->>'tagStatus' = 'matched'
+         OR ed.metadata->>'staffUserId' = $3::text)
+     ORDER BY ts_rank(ed.search_vector, plainto_tsquery('english', $1)) DESC
      LIMIT 6`,
-    [message],
+    [message, user.role, user.id],
   );
   return result.rows;
 }
@@ -12390,12 +12398,16 @@ async function internalStaffAgentContext(request: Request) {
     microsoftAgentMemory(user),
     message
       ? getPool().query(
-          `SELECT entity_type, entity_id, content, metadata
-           FROM embedding_documents
-           WHERE search_vector @@ plainto_tsquery('english', $1)
-           ORDER BY ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
+          `SELECT ed.entity_type, ed.entity_id, ed.content, ed.metadata
+           FROM embedding_documents ed
+           WHERE ed.search_vector @@ plainto_tsquery('english', $1)
+             AND ($2::text = 'admin'
+               OR ed.entity_type <> 'yeastar_call'
+               OR ed.metadata->>'tagStatus' = 'matched'
+               OR ed.metadata->>'staffUserId' = $3::text)
+           ORDER BY ts_rank(ed.search_vector, plainto_tsquery('english', $1)) DESC
            LIMIT 8`,
-          [message],
+          [message, user.role, user.id],
         )
       : Promise.resolve({ rows: [] }),
     getPool().query(`
@@ -13838,6 +13850,8 @@ async function internalRagSearch(request: Request) {
 
   const body = await readJson(request);
   const query = requireText(body.query, "Query");
+  const requester = await staffAgentUserFromBody(body);
+  if (!requester) return json({ error: "Requester identity is required for RAG search" }, { status: 400 });
   const limit = Math.min(Math.max(Number(body.limit ?? 8), 1), 12);
   const vector = vectorLiteral(body.embedding);
 
@@ -13847,9 +13861,13 @@ async function internalRagSearch(request: Request) {
           1 - (embedding <=> $1::vector) AS score
          FROM embedding_documents
          WHERE embedding IS NOT NULL
+           AND ($3::text = 'admin'
+             OR entity_type <> 'yeastar_call'
+             OR metadata->>'tagStatus' = 'matched'
+             OR metadata->>'staffUserId' = $4::text)
          ORDER BY embedding <=> $1::vector
          LIMIT $2`,
-        [vector, limit],
+        [vector, limit, requester.role, requester.id],
       )
     : { rows: [] };
 
@@ -13858,9 +13876,13 @@ async function internalRagSearch(request: Request) {
       ts_rank(search_vector, plainto_tsquery('english', $1)) AS score
      FROM embedding_documents
      WHERE search_vector @@ plainto_tsquery('english', $1)
+       AND ($3::text = 'admin'
+         OR entity_type <> 'yeastar_call'
+         OR metadata->>'tagStatus' = 'matched'
+         OR metadata->>'staffUserId' = $4::text)
      ORDER BY ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
      LIMIT $2`,
-    [query, limit],
+    [query, limit, requester.role, requester.id],
   );
 
   const seen = new Set<string>();
@@ -14043,7 +14065,7 @@ async function internalWhatsAppAgentContext(request: Request) {
   const conversationId = optionalText(body.conversationId);
   const [context, rag, history, tasks, recommendations] = await Promise.all([
     chatContextSummary(approved.user),
-    message ? whatsappContext(message) : Promise.resolve([]),
+    message ? whatsappContext(message, approved.user) : Promise.resolve([]),
     conversationId
       ? getPool().query(
           `

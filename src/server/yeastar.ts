@@ -388,6 +388,62 @@ async function matchYeastarCalls(pool: pg.Pool) {
   return { matched, personal, assigned };
 }
 
+async function indexYeastarTranscripts(pool: pg.Pool) {
+  const calls = await pool.query(
+    `SELECT id, call_time, call_type, call_from, call_to, disposition, duration_seconds,
+            transcript, staff_user_id, contact_id, organization_id, tag_status
+     FROM yeastar_calls
+     WHERE transcription_status = 'completed' AND transcript IS NOT NULL`,
+  );
+  let indexed = 0;
+  let removedPersonal = 0;
+  for (const call of calls.rows) {
+    if (call.tag_status === "personal") {
+      const removed = await pool.query(
+        "DELETE FROM embedding_documents WHERE entity_type = 'yeastar_call' AND entity_id = $1",
+        [call.id],
+      );
+      removedPersonal += removed.rowCount ?? 0;
+      continue;
+    }
+    const content = [
+      `Voice call: ${call.call_type ?? "unknown"}`,
+      `Date: ${call.call_time ?? "unknown"}`,
+      `From: ${call.call_from ?? "unknown"}`,
+      `To: ${call.call_to ?? "unknown"}`,
+      `Disposition: ${call.disposition ?? "unknown"}`,
+      call.duration_seconds ? `Duration: ${call.duration_seconds} seconds` : null,
+      "Transcript:",
+      call.transcript,
+    ]
+      .filter(Boolean)
+      .join("\n");
+    await pool.query(
+      "DELETE FROM embedding_documents WHERE entity_type = 'yeastar_call' AND entity_id = $1",
+      [call.id],
+    );
+    await pool.query(
+      `INSERT INTO embedding_documents (entity_type, entity_id, content, metadata)
+       VALUES ('yeastar_call', $1, $2, $3::jsonb)`,
+      [
+        call.id,
+        content,
+        JSON.stringify({
+          source: "yeastar_transcript",
+          callId: call.id,
+          callTime: call.call_time,
+          staffUserId: call.staff_user_id,
+          contactId: call.contact_id,
+          organizationId: call.organization_id,
+          tagStatus: call.tag_status,
+        }),
+      ],
+    );
+    indexed += 1;
+  }
+  return { indexed, removedPersonal };
+}
+
 function records(value: unknown): JsonRecord[] {
   return Array.isArray(value)
     ? value.filter((item): item is JsonRecord => Boolean(item && typeof item === "object"))
@@ -544,7 +600,15 @@ export async function runYeastarPoll(pool: pg.Pool) {
       await client.query("COMMIT");
       const transcription = await transcribePendingCalls(pool);
       const matching = await matchYeastarCalls(pool);
-      return { ok: true, ...result, transcription, matching, startedAt: startedAt.toISOString() };
+      const rag = await indexYeastarTranscripts(pool);
+      return {
+        ok: true,
+        ...result,
+        transcription,
+        matching,
+        rag,
+        startedAt: startedAt.toISOString(),
+      };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       if (logId) {

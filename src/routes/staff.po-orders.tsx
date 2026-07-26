@@ -86,7 +86,11 @@ function PosAndOrders() {
       event.currentTarget.reset();
       setPoFile(null);
       setShowCapture(false);
-      setNotice(body.salesOrderDraftId ? "PO captured and sales order draft created." : "PO captured in the inbox.");
+      setNotice(
+        body.salesOrderDraftId
+          ? "PO captured and sales order draft created."
+          : "PO captured in the inbox.",
+      );
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to capture PO");
@@ -118,6 +122,7 @@ function PosAndOrders() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button
+            data-guide="transaction-capture-po"
             onClick={() => setShowCapture((value) => !value)}
             className="inline-flex items-center gap-2 rounded-md bg-brand-orange px-3 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110"
           >
@@ -146,6 +151,7 @@ function PosAndOrders() {
 
       {showCapture && (
         <form
+          data-guide="transaction-po-form"
           onSubmit={capturePo}
           className="grid gap-3 rounded-lg border border-border/60 bg-surface p-4 lg:grid-cols-[1fr_160px_160px_160px_auto]"
         >
@@ -178,7 +184,10 @@ function PosAndOrders() {
             type="date"
             className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
           />
-          <button className="h-10 rounded-md bg-brand-orange px-4 text-sm font-semibold text-primary-foreground">
+          <button
+            data-guide="transaction-save-po"
+            className="h-10 rounded-md bg-brand-orange px-4 text-sm font-semibold text-primary-foreground"
+          >
             Save
           </button>
         </form>
@@ -197,8 +206,8 @@ function PosAndOrders() {
               <FileUp className="h-4 w-4 text-brand-orange" /> PO upload inbox
             </div>
             <p className="mt-1 text-sm text-muted-foreground">
-              Drop a client PO here first. Matched captures auto-create a sales order draft; unmatched
-              POs stay in the inbox until staff link a quote.
+              Drop a client PO here first. Matched captures auto-create a sales order draft;
+              unmatched POs stay in the inbox until staff link a quote.
             </p>
           </div>
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-brand-orange px-3 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110">

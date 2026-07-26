@@ -204,6 +204,7 @@ function FieldWork() {
         </div>
         <div className="flex flex-wrap gap-2">
           <button
+            data-guide="transaction-new-work"
             onClick={() => setShowForm((value) => !value)}
             className="inline-flex items-center gap-2 rounded-md bg-brand-orange px-3 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110"
           >
@@ -310,6 +311,7 @@ function FieldWork() {
       )}
       {showForm && (
         <form
+          data-guide="transaction-work-form"
           onSubmit={createWorkItem}
           className="grid gap-3 rounded-lg border border-border/60 bg-surface p-4 md:grid-cols-[1fr_180px_160px_160px_auto]"
         >
@@ -345,7 +347,10 @@ function FieldWork() {
             type="date"
             className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
           />
-          <button className="h-10 rounded-md bg-brand-orange px-4 text-sm font-semibold text-primary-foreground">
+          <button
+            data-guide="transaction-save-work"
+            className="h-10 rounded-md bg-brand-orange px-4 text-sm font-semibold text-primary-foreground"
+          >
             Save
           </button>
           <textarea

@@ -200,7 +200,8 @@ async function yeastarTagCall(request: Request, callId: string) {
   const body = asRecord(await readJson(request));
   const personal = body.personal === true;
   const contactId = optionalText(body.contactId);
-  if (!personal && !contactId) return json({ error: "Choose a customer or Personal" }, { status: 400 });
+  if (!personal && !contactId)
+    return json({ error: "Choose a customer or Personal" }, { status: 400 });
 
   const call = await getPool().query(
     `SELECT id, staff_user_id, call_type, call_from_number, call_to_number, transcription_status, audio_path
@@ -210,10 +211,14 @@ async function yeastarTagCall(request: Request, callId: string) {
   const row = call.rows[0];
   if (!row) return json({ error: "Call not found" }, { status: 404 });
   if (!row.staff_user_id || row.staff_user_id !== auth.user.id) {
-    return json({ error: "Only the staff member assigned to this call can tag it" }, { status: 403 });
+    return json(
+      { error: "Only the staff member assigned to this call can tag it" },
+      { status: 403 },
+    );
   }
   const normalizedNumber = normalizeYeastarPhone(yeastarExternalNumber(row));
-  if (!normalizedNumber) return json({ error: "This call has no external number to tag" }, { status: 400 });
+  if (!normalizedNumber)
+    return json({ error: "This call has no external number to tag" }, { status: 400 });
 
   if (personal) {
     await getPool().query(
@@ -234,10 +239,9 @@ async function yeastarTagCall(request: Request, callId: string) {
     return json({ ok: true, tagStatus: "personal" });
   }
 
-  const contact = await getPool().query(
-    "SELECT id, organization_id FROM contacts WHERE id = $1",
-    [contactId],
-  );
+  const contact = await getPool().query("SELECT id, organization_id FROM contacts WHERE id = $1", [
+    contactId,
+  ]);
   if (!contact.rows[0]) return json({ error: "Customer not found" }, { status: 404 });
   await getPool().query(
     `UPDATE yeastar_calls SET tag_status = 'matched', matched_number = $1, contact_id = $2,
@@ -247,34 +251,56 @@ async function yeastarTagCall(request: Request, callId: string) {
   return json({ ok: true, tagStatus: "matched" });
 }
 
-async function cleanupTutorialRecords(request: Request) {
-  const auth = await requireUser(request, ["admin", "staff"]);
-  if (auth.response) return auth.response;
-  const client = await getPool().connect();
+async function deleteTutorialRecords(pool: pg.Pool, olderThanHours?: number) {
+  const client = await pool.connect();
   try {
     await client.query("BEGIN");
-    const invoices = await client.query("DELETE FROM invoices WHERE is_tutorial = true");
-    const workItems = await client.query("DELETE FROM work_items WHERE is_tutorial = true");
-    const salesOrders = await client.query("DELETE FROM sales_orders WHERE is_tutorial = true");
-    const clientPos = await client.query("DELETE FROM client_pos WHERE is_tutorial = true");
-    const quotes = await client.query("DELETE FROM quotes WHERE is_tutorial = true");
+    const cutoff =
+      olderThanHours == null ? null : new Date(Date.now() - olderThanHours * 60 * 60 * 1000);
+    const predicate =
+      olderThanHours == null ? "is_tutorial = true" : "is_tutorial = true AND created_at < $1";
+    const values = cutoff ? [cutoff] : [];
+    const invoices = await client.query(`DELETE FROM invoices WHERE ${predicate}`, values);
+    const workItems = await client.query(`DELETE FROM work_items WHERE ${predicate}`, values);
+    const salesOrders = await client.query(`DELETE FROM sales_orders WHERE ${predicate}`, values);
+    const clientPos = await client.query(`DELETE FROM client_pos WHERE ${predicate}`, values);
+    const quotes = await client.query(`DELETE FROM quotes WHERE ${predicate}`, values);
     await client.query("COMMIT");
-    return json({
-      ok: true,
-      deleted: {
-        invoices: invoices.rowCount ?? 0,
-        workItems: workItems.rowCount ?? 0,
-        salesOrders: salesOrders.rowCount ?? 0,
-        clientPos: clientPos.rowCount ?? 0,
-        quotes: quotes.rowCount ?? 0,
-      },
-    });
+    return {
+      invoices: invoices.rowCount ?? 0,
+      workItems: workItems.rowCount ?? 0,
+      salesOrders: salesOrders.rowCount ?? 0,
+      clientPos: clientPos.rowCount ?? 0,
+      quotes: quotes.rowCount ?? 0,
+    };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
     client.release();
   }
+}
+
+async function cleanupTutorialRecords(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  return json({ ok: true, deleted: await deleteTutorialRecords(getPool()) });
+}
+
+let tutorialSweepTimer: NodeJS.Timeout | undefined;
+
+function startTutorialSweep() {
+  if (tutorialSweepTimer || process.env.NODE_ENV !== "production") return;
+  const intervalMs = 15 * 60_000;
+  tutorialSweepTimer = setInterval(() => {
+    void deleteTutorialRecords(getPool(), 2).catch((error) =>
+      console.error("Tutorial cleanup sweep failed", error),
+    );
+  }, intervalMs);
+  tutorialSweepTimer.unref?.();
+  void deleteTutorialRecords(getPool(), 2).catch((error) =>
+    console.error("Initial tutorial cleanup sweep failed", error),
+  );
 }
 
 function parseCookies(request: Request) {
@@ -1689,16 +1715,15 @@ async function refreshServiceReportEmbedding(
   const workItem = asRecord(payload.workItem);
   const evidenceByPhase = asRecord(payload.evidenceByPhase);
   const findings = Array.isArray(payload.structuredFindings) ? payload.structuredFindings : [];
-  const evidenceLines = ["before", "during", "after", "unclassified"]
-    .flatMap((phase) => {
-      const entries = Array.isArray(evidenceByPhase[phase]) ? evidenceByPhase[phase] : [];
-      return entries.map((rawEntry, index) => {
-        const entry = asRecord(rawEntry);
-        return `${phase} evidence ${index + 1}: ${
-          optionalText(entry.fileName) ?? optionalText(entry.evidenceType) ?? "file"
-        }${optionalText(entry.notes) ? ` — ${optionalText(entry.notes)}` : ""}`;
-      });
+  const evidenceLines = ["before", "during", "after", "unclassified"].flatMap((phase) => {
+    const entries = Array.isArray(evidenceByPhase[phase]) ? evidenceByPhase[phase] : [];
+    return entries.map((rawEntry, index) => {
+      const entry = asRecord(rawEntry);
+      return `${phase} evidence ${index + 1}: ${
+        optionalText(entry.fileName) ?? optionalText(entry.evidenceType) ?? "file"
+      }${optionalText(entry.notes) ? ` — ${optionalText(entry.notes)}` : ""}`;
     });
+  });
   const findingLines = findings.map((rawFinding, index) => {
     const finding = asRecord(rawFinding);
     return [
@@ -3788,7 +3813,8 @@ async function staffKpiDashboard(request: Request) {
       "SELECT id FROM staff_kpi_profiles WHERE user_id = $1 AND active = true LIMIT 1",
       [auth.user.id],
     );
-    if (!profile.rows[0]) return json({ error: "No KPI profile exists for this user" }, { status: 409 });
+    if (!profile.rows[0])
+      return json({ error: "No KPI profile exists for this user" }, { status: 409 });
     const entryDate = optionalText(body.entryDate) ?? new Date().toISOString().slice(0, 10);
     const result = await getPool().query(
       `INSERT INTO staff_time_entries (profile_id, user_id, category_key, category_label, activity_label, hours, entry_date, source)
@@ -3804,7 +3830,14 @@ async function staffKpiDashboard(request: Request) {
         entryDate,
       ],
     );
-    await audit(getPool(), "create_staff_time_entry", "staff_time_entry", result.rows[0].id, {}, auth.user);
+    await audit(
+      getPool(),
+      "create_staff_time_entry",
+      "staff_time_entry",
+      result.rows[0].id,
+      {},
+      auth.user,
+    );
     return json({ ok: true, entry: result.rows[0] }, { status: 201 });
   }
 
@@ -4171,8 +4204,7 @@ async function capabilityChecklist(request: Request) {
   try {
     await client.query("BEGIN");
     const board = await ensureTaskBoard(client);
-    const fallbackStage =
-      board.stages.find((stage) => stage.name === "Backlog") ?? board.stages[0];
+    const fallbackStage = board.stages.find((stage) => stage.name === "Backlog") ?? board.stages[0];
     const result = await client.query(
       `INSERT INTO tasks (
         board_id, stage_id, owner_id, title, description, priority, status, due_at, source
@@ -4191,7 +4223,14 @@ async function capabilityChecklist(request: Request) {
       ],
     );
     await refreshTaskEmbedding(client, result.rows[0].id);
-    await audit(getPool(), "create_capability_checklist_item", "task", result.rows[0].id, {}, auth.user);
+    await audit(
+      getPool(),
+      "create_capability_checklist_item",
+      "task",
+      result.rows[0].id,
+      {},
+      auth.user,
+    );
     await client.query("COMMIT");
     return json({ ok: true, itemId: result.rows[0].id }, { status: 201 });
   } catch (error) {
@@ -4842,7 +4881,7 @@ async function invoices(request: Request) {
       if (!signedOff) return json({ error: "Awaiting client sign-off" }, { status: 409 });
     }
     const result = await getPool().query(
-        `INSERT INTO invoices (
+      `INSERT INTO invoices (
         invoice_number, organization_id, project_id, deal_id, client_po_id, sales_order_id,
         work_item_id, owner_id, status, is_tutorial,
         subtotal_cents, tax_cents, total_cents, issued_on, due_on, notes
@@ -4961,7 +5000,11 @@ async function cashFlowAlerts(request: Request) {
   const url = new URL(request.url);
   const balanceThresholdCents = Math.max(
     0,
-    Number(url.searchParams.get("balanceThresholdCents") ?? process.env.CASH_FLOW_ALERT_BALANCE_THRESHOLD_CENTS ?? 0),
+    Number(
+      url.searchParams.get("balanceThresholdCents") ??
+        process.env.CASH_FLOW_ALERT_BALANCE_THRESHOLD_CENTS ??
+        0,
+    ),
   );
   const overdueDays = Math.max(
     0,
@@ -5559,7 +5602,7 @@ async function fieldWork(request: Request) {
     const body = await readJson(request);
     body.isTutorial = isTutorialRequest(request);
     const result = await getPool().query(
-        `INSERT INTO work_items (
+      `INSERT INTO work_items (
         organization_id, site_id, building_id, area_id, asset_id, project_id, deal_id, quote_id,
         owner_id, title, work_type, status, priority, scope, scheduled_for, is_tutorial
        )
@@ -9161,7 +9204,17 @@ async function reportsSummary(request: Request) {
   if (auth.response) return auth.response;
 
   const pool = getPool();
-  const [pipeline, statuses, sources, months, owners, revenue, opportunities, quotations, serviceDelivery] = await Promise.all([
+  const [
+    pipeline,
+    statuses,
+    sources,
+    months,
+    owners,
+    revenue,
+    opportunities,
+    quotations,
+    serviceDelivery,
+  ] = await Promise.all([
     pool.query(`
     SELECT s.name, count(d.id)::int AS deals, COALESCE(sum(d.value_cents)::int, 0) AS value_cents
     FROM pipeline_stages s
@@ -9238,13 +9291,18 @@ async function reportsSummary(request: Request) {
     months: months.rows,
     owners: owners.rows,
     kpis: {
-      revenue: revenue.rows[0] ?? { quoted_value_cents: 0, invoiced_value_cents: 0, collected_value_cents: 0 },
+      revenue: revenue.rows[0] ?? {
+        quoted_value_cents: 0,
+        invoiced_value_cents: 0,
+        collected_value_cents: 0,
+      },
       opportunities: opportunities.rows[0] ?? { count: 0, value_cents: 0 },
       quotations: {
         ...quoteMetrics,
-        win_rate: Number(quoteMetrics.decided ?? 0) > 0
-          ? Number(quoteMetrics.won ?? 0) / Number(quoteMetrics.decided)
-          : null,
+        win_rate:
+          Number(quoteMetrics.decided ?? 0) > 0
+            ? Number(quoteMetrics.won ?? 0) / Number(quoteMetrics.decided)
+            : null,
       },
       serviceDelivery: { ...serviceMetrics, csat: null, csatStatus: "not_available_in_schema" },
     },
@@ -12667,7 +12725,8 @@ async function createBugReport(request: Request) {
   const screenshot = form.get("screenshot");
   if (!comment) return json({ error: "Please describe what went wrong" }, { status: 400 });
   if (comment.length > 10000) return json({ error: "Comment is too long" }, { status: 400 });
-  if (!pageUrl || pageUrl.length > 2048) return json({ error: "A valid page URL is required" }, { status: 400 });
+  if (!pageUrl || pageUrl.length > 2048)
+    return json({ error: "A valid page URL is required" }, { status: 400 });
   if (!(screenshot instanceof File) || !screenshot.size) {
     return json({ error: "Screenshot is required" }, { status: 400 });
   }
@@ -12675,7 +12734,8 @@ async function createBugReport(request: Request) {
     return json({ error: "Screenshot must be an image up to 10MB" }, { status: 400 });
   }
 
-  const uploadDir = process.env.BUG_REPORT_UPLOAD_DIR || path.resolve(process.cwd(), "uploads/bug-reports");
+  const uploadDir =
+    process.env.BUG_REPORT_UPLOAD_DIR || path.resolve(process.cwd(), "uploads/bug-reports");
   await mkdir(uploadDir, { recursive: true });
   const id = crypto.randomUUID();
   const storedPath = path.join(uploadDir, `${id}.png`);
@@ -15517,7 +15577,12 @@ async function partnerProspects(request: Request) {
   `);
   return json({
     partnerProspects: rows.rows,
-    summary: { target: 15, prospects: rows.rows.length, engagements: engagements.rows[0]?.count ?? 0, categories: categories.rows },
+    summary: {
+      target: 15,
+      prospects: rows.rows.length,
+      engagements: engagements.rows[0]?.count ?? 0,
+      categories: categories.rows,
+    },
   });
 }
 
@@ -15787,7 +15852,11 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
     const clientSignoffEvidenceMatch = path.match(
       /^\/api\/client-signoff\/([^/]+)\/evidence\/([^/]+)$/,
     );
-    if (request.method === "GET" && clientSignoffEvidenceMatch?.[1] && clientSignoffEvidenceMatch[2])
+    if (
+      request.method === "GET" &&
+      clientSignoffEvidenceMatch?.[1] &&
+      clientSignoffEvidenceMatch[2]
+    )
       return clientSignoffEvidence(
         request,
         clientSignoffEvidenceMatch[1],
@@ -15826,9 +15895,15 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
     const approvalDecisionMatch = path.match(/^\/api\/steve\/approvals\/([^/]+)$/);
     if (request.method === "PATCH" && approvalDecisionMatch?.[1])
       return approvalRequestDecision(request, approvalDecisionMatch[1]);
-    if (path === "/api/staff/kpi-dashboard" && (request.method === "GET" || request.method === "POST"))
+    if (
+      path === "/api/staff/kpi-dashboard" &&
+      (request.method === "GET" || request.method === "POST")
+    )
       return staffKpiDashboard(request);
-    if (path === "/api/capability-checklist" && (request.method === "GET" || request.method === "POST"))
+    if (
+      path === "/api/capability-checklist" &&
+      (request.method === "GET" || request.method === "POST")
+    )
       return capabilityChecklist(request);
     if (request.method === "GET" && path === "/api/staff/chat/status")
       return staffChatStatus(request);
@@ -15849,7 +15924,8 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
     if (request.method === "POST" && path === "/api/steve/ask") return steveAsk(request);
     if (request.method === "POST" && path === "/api/steve/actions") return steveAction(request);
     if (request.method === "GET" && path === "/api/reports/summary") return reportsSummary(request);
-    if (request.method === "GET" && path === "/api/reports/management") return managementReport(request);
+    if (request.method === "GET" && path === "/api/reports/management")
+      return managementReport(request);
     if (request.method === "GET" && path === "/api/settings/summary")
       return settingsSummary(request);
     if (request.method === "GET" && path === "/api/settings/whatsapp-operations")
@@ -15963,6 +16039,12 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
 
 // The production deployment is a single application container, so this avoids introducing
 // a second scheduler. It is disabled outside production and when Yeastar credentials are absent.
-if (process.env.NODE_ENV === "production" && process.env.YEASTAR_CLIENT_ID && process.env.YEASTAR_CLIENT_SECRET) {
+if (
+  process.env.NODE_ENV === "production" &&
+  process.env.YEASTAR_CLIENT_ID &&
+  process.env.YEASTAR_CLIENT_SECRET
+) {
   startYeastarPoller(getPool());
 }
+
+startTutorialSweep();

@@ -84,7 +84,8 @@ function Billing() {
       alertResponse.json(),
     ]);
     if (!invoiceResponse.ok) throw new Error(invoiceBody.error ?? "Billing failed to load");
-    if (!releaseResponse.ok) throw new Error(releaseBody.error ?? "Payment release view failed to load");
+    if (!releaseResponse.ok)
+      throw new Error(releaseBody.error ?? "Payment release view failed to load");
     if (!alertResponse.ok) throw new Error(alertBody.error ?? "Cash-flow alerts failed to load");
     setInvoices(invoiceBody.invoices);
     setPaymentReleases(releaseBody.paymentReleases);
@@ -145,6 +146,7 @@ function Billing() {
             <Bot className="h-4 w-4" /> Ask Steve
           </Link>
           <button
+            data-guide="transaction-new-invoice"
             onClick={() => setShowNewInvoice((value) => !value)}
             className="inline-flex items-center gap-2 rounded-md bg-brand-orange px-3 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110"
           >
@@ -162,6 +164,7 @@ function Billing() {
 
       {showNewInvoice && (
         <form
+          data-guide="transaction-invoice-form"
           onSubmit={createInvoice}
           className="grid gap-3 rounded-lg border border-border/60 bg-surface p-4 md:grid-cols-[160px_140px_140px_minmax(180px,1fr)_auto]"
         >
@@ -195,6 +198,7 @@ function Billing() {
             className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
           />
           <button
+            data-guide="transaction-create-invoice"
             disabled={creating}
             className="inline-flex h-10 items-center justify-center rounded-md bg-brand-orange px-4 text-sm font-semibold text-primary-foreground disabled:opacity-70"
           >
@@ -221,29 +225,49 @@ function Billing() {
       <section className="rounded-lg border border-border/60 bg-surface p-5 shadow-sm">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Cash flow</div>
+            <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+              Cash flow
+            </div>
             <h2 className="mt-1 text-xl font-bold">Subcontractor alerts</h2>
-            <p className="text-sm text-muted-foreground">Internal notification-only alerts for Vusi; no work-assignment gate is applied.</p>
+            <p className="text-sm text-muted-foreground">
+              Internal notification-only alerts for Vusi; no work-assignment gate is applied.
+            </p>
           </div>
-          <span className="rounded-full bg-amber-500/15 px-3 py-1 text-sm font-semibold text-amber-500">{cashFlowAlerts.length} alert{cashFlowAlerts.length === 1 ? "" : "s"}</span>
+          <span className="rounded-full bg-amber-500/15 px-3 py-1 text-sm font-semibold text-amber-500">
+            {cashFlowAlerts.length} alert{cashFlowAlerts.length === 1 ? "" : "s"}
+          </span>
         </div>
         <div className="mt-4 space-y-2">
           {cashFlowAlerts.map((alert) => (
-            <div key={alert.id} className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm">
-              <div className="font-semibold">{alert.subcontractor_name} · {money(alert.amount_cents)}</div>
-              <div className="text-muted-foreground">{alert.alert_reason}{alert.due_on ? ` · due ${alert.due_on}` : ""}{alert.work_item_title ? ` · ${alert.work_item_title}` : ""}</div>
+            <div
+              key={alert.id}
+              className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm"
+            >
+              <div className="font-semibold">
+                {alert.subcontractor_name} · {money(alert.amount_cents)}
+              </div>
+              <div className="text-muted-foreground">
+                {alert.alert_reason}
+                {alert.due_on ? ` · due ${alert.due_on}` : ""}
+                {alert.work_item_title ? ` · ${alert.work_item_title}` : ""}
+              </div>
             </div>
           ))}
-          {!cashFlowAlerts.length && <p className="text-sm text-muted-foreground">No configured cash-flow alerts.</p>}
+          {!cashFlowAlerts.length && (
+            <p className="text-sm text-muted-foreground">No configured cash-flow alerts.</p>
+          )}
         </div>
       </section>
 
       <section className="overflow-hidden rounded-lg border border-border/60 bg-surface">
         <div className="border-b border-border/60 p-5">
-          <div className="text-xs uppercase tracking-wider text-muted-foreground">Subcontractor payment control</div>
+          <div className="text-xs uppercase tracking-wider text-muted-foreground">
+            Subcontractor payment control
+          </div>
           <h2 className="mt-1 text-xl font-bold">Payment release queue</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Release is ready only when the subcontractor work is complete or invoiced and the linked client invoice is paid.
+            Release is ready only when the subcontractor work is complete or invoiced and the linked
+            client invoice is paid.
           </p>
         </div>
         <div className="overflow-x-auto">
@@ -262,27 +286,40 @@ function Billing() {
                 <tr key={release.id}>
                   <td className="px-4 py-3">
                     <div className="font-medium">{release.subcontractor_name}</div>
-                    <div className="text-xs text-muted-foreground">{release.work_item_title ?? release.project_name ?? "Unlinked job"}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {release.work_item_title ?? release.project_name ?? "Unlinked job"}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-xs text-muted-foreground">
                     <div>PO: {release.client_po_number ?? "Not linked"}</div>
                     <div>SO: {release.sales_order_number ?? "Not linked"}</div>
-                    <div>Invoice: {release.invoice_number ?? "Not linked"}{release.invoice_status ? ` · ${release.invoice_status}` : ""}</div>
+                    <div>
+                      Invoice: {release.invoice_number ?? "Not linked"}
+                      {release.invoice_status ? ` · ${release.invoice_status}` : ""}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     <div>{release.po_number ?? "No number"}</div>
                     <div className="text-xs uppercase text-muted-foreground">{release.status}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-1 text-xs font-semibold ${release.release_ready ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"}`}>
+                    <span
+                      className={`rounded-full px-2 py-1 text-xs font-semibold ${release.release_ready ? "bg-emerald-500/15 text-emerald-500" : "bg-amber-500/15 text-amber-500"}`}
+                    >
                       {release.release_reason}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-right font-semibold text-brand-orange">{money(release.amount_cents)}</td>
+                  <td className="px-4 py-3 text-right font-semibold text-brand-orange">
+                    {money(release.amount_cents)}
+                  </td>
                 </tr>
               ))}
               {paymentReleases.length === 0 && (
-                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">No unpaid subcontractor POs in the release queue.</td></tr>
+                <tr>
+                  <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                    No unpaid subcontractor POs in the release queue.
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

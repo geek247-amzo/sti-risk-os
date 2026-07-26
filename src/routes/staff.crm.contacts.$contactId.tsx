@@ -6,6 +6,7 @@ import {
   Ban,
   CheckCircle2,
   ClipboardList,
+  PhoneCall,
   Send,
   ShieldCheck,
 } from "lucide-react";
@@ -73,6 +74,21 @@ type ContactDetailData = {
     created_at: string;
   }[];
   recommendations: { id: string; recommendation_type: string; title: string; body: string }[];
+  calls: {
+    id: string;
+    call_time: string | null;
+    call_type: string | null;
+    call_from: string | null;
+    call_to: string | null;
+    disposition: string | null;
+    duration_seconds: number | null;
+    recording_file: string | null;
+    transcription_status: string;
+    transcript: string | null;
+    transcribed_at: string | null;
+    tag_status: string;
+    staff_name: string | null;
+  }[];
 };
 
 type Campaign = { id: string; name: string; status: string };
@@ -295,6 +311,50 @@ function ContactDetail() {
                     </p>
                   </div>
                 ))}
+            </div>
+          </section>
+
+          <section className="rounded-md border border-border/60 bg-surface">
+            <div className="flex items-center gap-2 border-b border-border/60 px-5 py-4 text-sm font-semibold">
+              <PhoneCall className="h-4 w-4 text-brand-orange" /> Call history
+            </div>
+            <div className="divide-y divide-border/40">
+              {(data?.calls ?? []).map((call) => (
+                <div key={call.id} className="px-5 py-4 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-medium">
+                      {call.call_from ?? "Unknown"} → {call.call_to ?? "Unknown"}
+                    </div>
+                    <span className="text-xs text-muted-foreground">
+                      {call.call_time ? new Date(call.call_time).toLocaleString() : "Unknown time"}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted-foreground">
+                    {call.call_type ?? "Call"} · {call.disposition ?? "No disposition"}
+                    {call.staff_name ? ` · ${call.staff_name}` : ""}
+                    {call.duration_seconds ? ` · ${call.duration_seconds}s` : ""}
+                  </div>
+                  {call.transcript ? (
+                    <details className="mt-3 rounded-md bg-muted/40 p-3">
+                      <summary className="cursor-pointer text-xs font-medium">
+                        Transcript ({call.transcription_status})
+                      </summary>
+                      <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+                        {call.transcript}
+                      </p>
+                    </details>
+                  ) : (
+                    <div className="mt-2 text-xs text-muted-foreground">
+                      Transcript {call.transcription_status}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {data && data.calls.length === 0 && (
+                <div className="px-5 py-6 text-sm text-muted-foreground">
+                  No linked call history.
+                </div>
+              )}
             </div>
           </section>
         </div>

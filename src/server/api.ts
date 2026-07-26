@@ -3275,6 +3275,17 @@ async function contactDetail(request: Request, contactId: string) {
   `,
     [contactId],
   );
+  const calls = await getPool().query(
+    `SELECT yc.id, yc.call_time, yc.call_type, yc.call_from, yc.call_to, yc.disposition,
+            yc.duration_seconds, yc.recording_file, yc.transcription_status, yc.transcript,
+            yc.transcribed_at, yc.tag_status, u.name AS staff_name
+     FROM yeastar_calls yc
+     LEFT JOIN app_users u ON u.id = yc.staff_user_id
+     WHERE yc.contact_id = $1 AND yc.tag_status = 'matched'
+     ORDER BY yc.call_time DESC NULLS LAST
+     LIMIT 100`,
+    [contactId],
+  );
 
   return json({
     contact: contact.rows[0],
@@ -3285,6 +3296,7 @@ async function contactDetail(request: Request, contactId: string) {
     communications: communications.rows,
     activities: activities.rows,
     recommendations: recommendations.rows,
+    calls: calls.rows,
   });
 }
 

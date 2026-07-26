@@ -166,7 +166,7 @@ async function yeastarCalls(request: Request) {
   if (auth.response) return auth.response;
   const url = new URL(request.url);
   const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 100)));
-  const visibility = auth.user.role === "admin" ? "" : "WHERE yc.staff_user_id = $2";
+  const visibility = "WHERE ($3::boolean = true OR yc.staff_user_id = $2)";
   const rows = await getPool().query(
     `SELECT yc.id, yc.provider_uid, yc.call_time, yc.call_type, yc.call_from, yc.call_from_name, yc.call_from_number,
             call_to, call_to_name, call_to_number, disposition, duration_seconds, recording_file,
@@ -182,7 +182,7 @@ async function yeastarCalls(request: Request) {
      ${visibility}
      ORDER BY yc.call_time DESC NULLS LAST, yc.created_at DESC
      LIMIT $1`,
-    auth.user.role === "admin" ? [limit] : [limit, auth.user.id],
+    [limit, auth.user.id, auth.user.role === "admin"],
   );
   const contacts = await getPool().query(
     `SELECT c.id, c.first_name, c.last_name, c.phone, c.organization_id, o.name AS organization_name

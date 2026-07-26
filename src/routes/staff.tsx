@@ -144,6 +144,9 @@ function resultLink(result: SearchResult) {
   if (result.entity_type === "quote") {
     return { to: "/staff/quotes/$quoteId" as const, params: { quoteId: result.entity_id } };
   }
+  if (result.entity_type === "help_guide") {
+    return { to: "/staff/help" as const };
+  }
   return null;
 }
 

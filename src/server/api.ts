@@ -1402,6 +1402,129 @@ async function replaceEmbeddingDocument(
   );
 }
 
+const helpEmbeddingRecords = [
+  {
+    key: "guide-overview",
+    title: "Staff portal overview",
+    content:
+      "Staff portal overview: Command Centre brings together open work, quotations, clients, projects, billing, inspections, reports, tasks, and Steve AI. Use the sidebar navigation to move between operating areas. The Help menu relaunches walkthroughs and opens the Help Center.",
+    href: "/staff/help",
+  },
+  {
+    key: "guide-workflow",
+    title: "Core workflow guide",
+    content:
+      "Core workflow guide: move from CRM and opportunity qualification into quotations, client PO capture, sales-order preparation, field work, inspection evidence, service reports, client sign-off, billing, and payment release. Use existing approval and sign-off gates before consequential actions.",
+    href: "/staff/help",
+  },
+  {
+    key: "guide-transaction",
+    title: "Interactive transaction walkthrough",
+    content:
+      "Interactive transaction walkthrough: the guided route follows quote creation, quote review, client PO capture, field-work creation, inspection capture and signature, assembled inspection report generation, and invoice creation. Tutorial records are marked is_tutorial and excluded from operational metrics; abandoned tutorial records are removed by the server cleanup sweep.",
+    href: "/staff/help",
+  },
+  {
+    key: "guide-kpi",
+    title: "KPI dashboard and drill-down",
+    content:
+      "KPI dashboard guide: review revenue, opportunities, quotations, win rate, service delivery, cash flow, and operational measures. KPI tiles link through to the underlying records so staff can inspect the source of each number.",
+    href: "/staff/reports",
+  },
+  {
+    key: "guide-finance",
+    title: "Finance and cash-flow alerts",
+    content:
+      "Finance guide: billing shows invoices, payment-release visibility, subcontractor balances, and cash-flow alerts. Alerts are internal notifications for Vusi and do not automatically block work assignment. Review payment and approval status before releasing funds.",
+    href: "/staff/billing",
+  },
+  {
+    key: "guide-capability",
+    title: "Capability checklist",
+    content:
+      "Capability checklist guide: use the Capability page to add, edit, complete, reopen, and cancel capability objectives. It reuses the existing tasks infrastructure and does not create a parallel checklist system.",
+    href: "/staff/capability",
+  },
+  {
+    key: "guide-partners",
+    title: "Partner development pipeline",
+    content:
+      "Partner development guide: track sprinkler, insurance, and competitor partner opportunities through the existing CRM pipeline and follow-up actions. Use the pipeline view to monitor engagement progress toward the target.",
+    href: "/staff/growth",
+  },
+  {
+    key: "guide-time",
+    title: "Daily time tracking",
+    content:
+      "Daily time tracking guide: record activity against Revenue Development, Partner Development, Project Delivery, Quotations, Strategy, and Travel. Use the weekly roll-up to review where operating time is being spent.",
+    href: "/staff/vusi",
+  },
+  {
+    key: "guide-referrals",
+    title: "Testimonials and referrals",
+    content:
+      "Testimonial and referral guide: near project completion, use the existing task and follow-up workflow to prompt testimonial and referral capture without creating a duplicate trigger system.",
+    href: "/staff/work",
+  },
+  {
+    key: "guide-inspections",
+    title: "Inspection capture and evidence",
+    content:
+      "Inspection guide: select customer, site, building, area, and asset context; start a checklist; record structured findings, risk levels, comments, and required evidence; then complete technician signature. Evidence is delivered through secure token-scoped URLs for public sign-off.",
+    href: "/staff/inspections",
+  },
+  {
+    key: "guide-reports",
+    title: "Management reports and exports",
+    content:
+      "Management reporting guide: generate daily, weekly, or monthly snapshots from live CRM, billing, quotation, and work-item data. Drill into source records, export CSV for spreadsheet analysis, or use Print / Save PDF. Automated email delivery is the selected future delivery channel but is not automatic in the current scope.",
+    href: "/staff/reports",
+  },
+  {
+    key: "guide-voice",
+    title: "Yeastar voice and call transcripts",
+    content:
+      "Voice guide: the Voice page shows staff-scoped calls, recordings, CDRs, transcripts, and the tagging queue. Calls are matched using normalized phone numbers without fuzzy matching. Personal calls retain metadata only, their audio is deleted, and personal calls are excluded from Steve RAG indexing.",
+    href: "/staff/voice",
+  },
+  {
+    key: "topic-tasks",
+    title: "Tasks and approvals",
+    content:
+      "Tasks and approvals reference: use Work for follow-ups, capability actions, operational queues, and task comments. External messages, pricing, finance decisions, and other consequential actions remain approval-gated.",
+    href: "/staff/work",
+  },
+  {
+    key: "topic-steve",
+    title: "Steve AI reference",
+    content:
+      "Steve AI reference: Steve uses authenticated platform context plus full-text and vector retrieval from the STI embedding index. It can summarise and recommend, while external or consequential actions require approval. Help Center material is indexed as help_guide documents.",
+    href: "/staff/steve",
+  },
+] as const;
+
+async function refreshHelpEmbeddings(pool: pg.Pool) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("DELETE FROM embedding_documents WHERE entity_type = 'help_guide'");
+    for (const record of helpEmbeddingRecords) {
+      await client.query(
+        `INSERT INTO embedding_documents (entity_type, entity_id, content, metadata)
+         VALUES ('help_guide', gen_random_uuid(), $1, $2::jsonb)`,
+        [record.content, JSON.stringify({ source: "help_center", key: record.key, title: record.title, href: record.href })],
+      );
+    }
+    await client.query("COMMIT");
+    return helpEmbeddingRecords.length;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function refreshQuoteEmbedding(client: pg.Pool | pg.PoolClient, quoteId: string) {
   const quote = await client.query(
     `SELECT q.id, q.quote_number, q.organization_id, q.site_id, q.status, q.currency, q.valid_until, q.client_reference,
@@ -16048,3 +16171,9 @@ if (
 }
 
 startTutorialSweep();
+
+if (process.env.NODE_ENV === "production") {
+  void refreshHelpEmbeddings(getPool()).catch((error) =>
+    console.error("Help Center embedding refresh failed", error),
+  );
+}

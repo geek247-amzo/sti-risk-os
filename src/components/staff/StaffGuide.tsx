@@ -370,9 +370,49 @@ export const guides: Record<
         body: "Complete the required fields, then click Create Quote. Tutorial mode is attached automatically.",
       },
       {
-        eyebrow: "04 · Continue",
-        title: "Keep moving through the hand-offs",
-        body: "After the quote is created, continue through PO capture, field work, inspection/report review, sign-off, and billing using the same real screens. Close the guide at any point; tutorial records remain marked for safe cleanup.",
+        route: "/staff/quotes",
+        target: '[data-guide="nav-po-orders"]',
+        advanceOnClick: true,
+        eyebrow: "04 · PO",
+        title: "Move to PO capture",
+        body: "After saving the tutorial quote, click POs & Orders to continue through the normal hand-off.",
+      },
+      {
+        route: "/staff/po-orders",
+        target: '[data-guide="nav-field-work"]',
+        advanceOnClick: true,
+        eyebrow: "05 · Work",
+        title: "Move to field work",
+        body: "Use the real Field Work queue for the next operational hand-off.",
+      },
+      {
+        route: "/staff/field-work",
+        target: '[data-guide="nav-inspections"]',
+        advanceOnClick: true,
+        eyebrow: "06 · Inspect",
+        title: "Move to inspection capture",
+        body: "Continue to Inspections to review the field evidence path.",
+      },
+      {
+        route: "/staff/inspections",
+        target: '[data-guide="nav-inspection-reports"]',
+        advanceOnClick: true,
+        eyebrow: "07 · Report",
+        title: "Move to report review",
+        body: "Use Survey Reports for the assembled findings and sign-off hand-off.",
+      },
+      {
+        route: "/staff/inspection-reports",
+        target: '[data-guide="nav-billing"]',
+        advanceOnClick: true,
+        eyebrow: "08 · Billing",
+        title: "Finish at Finance",
+        body: "The route ends at Finance, where the real invoice and payment workflow lives.",
+      },
+      {
+        eyebrow: "09 · Finish",
+        title: "Transaction walkthrough complete",
+        body: "The route has followed the real quote → PO → field work → inspection → report → billing chain. Select Done to remove tutorial records, or close the guide earlier to clean them up safely.",
       },
     ],
   },
@@ -523,6 +563,7 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
   const total = guides[guideId].steps.length;
   const finish = () => {
     if (guideId === "transaction") {
+      void fetch("/api/tutorial/cleanup", { method: "POST" });
       document.cookie = "sti_tutorial=; Path=/; Max-Age=0; SameSite=Lax";
       window.localStorage.removeItem("sti-risk-transaction-guide");
     }

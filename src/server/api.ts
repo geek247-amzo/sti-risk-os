@@ -247,6 +247,36 @@ async function yeastarTagCall(request: Request, callId: string) {
   return json({ ok: true, tagStatus: "matched" });
 }
 
+async function cleanupTutorialRecords(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const invoices = await client.query("DELETE FROM invoices WHERE is_tutorial = true");
+    const workItems = await client.query("DELETE FROM work_items WHERE is_tutorial = true");
+    const salesOrders = await client.query("DELETE FROM sales_orders WHERE is_tutorial = true");
+    const clientPos = await client.query("DELETE FROM client_pos WHERE is_tutorial = true");
+    const quotes = await client.query("DELETE FROM quotes WHERE is_tutorial = true");
+    await client.query("COMMIT");
+    return json({
+      ok: true,
+      deleted: {
+        invoices: invoices.rowCount ?? 0,
+        workItems: workItems.rowCount ?? 0,
+        salesOrders: salesOrders.rowCount ?? 0,
+        clientPos: clientPos.rowCount ?? 0,
+        quotes: quotes.rowCount ?? 0,
+      },
+    });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 function parseCookies(request: Request) {
   const header = request.headers.get("cookie") ?? "";
   const cookies = new Map<string, string>();
@@ -15508,6 +15538,8 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return yeastarPoll(request);
     if (request.method === "GET" && path === "/api/integrations/yeastar/calls")
       return yeastarCalls(request);
+    if (request.method === "POST" && path === "/api/tutorial/cleanup")
+      return cleanupTutorialRecords(request);
     const yeastarTagMatch = path.match(/^\/api\/integrations\/yeastar\/calls\/([^/]+)\/tag$/);
     if (request.method === "POST" && yeastarTagMatch)
       return yeastarTagCall(request, yeastarTagMatch[1]);

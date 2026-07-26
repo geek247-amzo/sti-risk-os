@@ -9,6 +9,8 @@ export const Route = createFileRoute("/staff/voice")({
 
 function Voice() {
   const [calls, setCalls] = useState<Call[]>([]);
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [selectedContacts, setSelectedContacts] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,6 +21,7 @@ function Voice() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Unable to load calls");
       setCalls(body.calls ?? []);
+      setContacts(body.contacts ?? []);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to load calls");
@@ -28,6 +31,17 @@ function Voice() {
   }, []);
 
   useEffect(() => void load(), [load]);
+
+  const tagCall = async (callId: string, payload: { contactId?: string; personal?: boolean }) => {
+    const response = await fetch(`/api/integrations/yeastar/calls/${callId}/tag`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error ?? "Unable to tag call");
+    await load();
+  };
 
   return (
     <main className="mx-auto max-w-7xl space-y-6 px-6 py-8">
@@ -94,6 +108,63 @@ function Voice() {
                   <FileAudio className="h-3.5 w-3.5" /> {call.recording_file}
                 </p>
               )}
+              <div className="mt-4 flex flex-wrap items-center gap-2 border-t pt-4 text-sm">
+                <span className="text-muted-foreground">{call.tag_status ?? "untagged"}</span>
+                {call.contact_first_name && (
+                  <span className="text-muted-foreground">
+                    · {call.contact_first_name} {call.contact_last_name ?? ""}
+                    {call.organization_name ? ` (${call.organization_name})` : ""}
+                  </span>
+                )}
+                {call.staff_name && (
+                  <span className="text-muted-foreground">· {call.staff_name}</span>
+                )}
+                {call.tag_status === "untagged" && call.can_tag && (
+                  <>
+                    <select
+                      className="h-9 rounded-md border bg-background px-2 text-sm"
+                      value={selectedContacts[call.id] ?? ""}
+                      onChange={(event) =>
+                        setSelectedContacts((current) => ({
+                          ...current,
+                          [call.id]: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Select customer…</option>
+                      {contacts.map((contact) => (
+                        <option key={contact.id} value={contact.id}>
+                          {contact.first_name ?? ""} {contact.last_name ?? ""}
+                          {contact.organization_name ? ` · ${contact.organization_name}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      size="sm"
+                      disabled={!selectedContacts[call.id]}
+                      onClick={() =>
+                        void tagCall(call.id, { contactId: selectedContacts[call.id] }).catch(
+                          (err) =>
+                            setError(err instanceof Error ? err.message : "Unable to tag call"),
+                        )
+                      }
+                    >
+                      Link customer
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void tagCall(call.id, { personal: true }).catch((err) =>
+                          setError(err instanceof Error ? err.message : "Unable to tag call"),
+                        )
+                      }
+                    >
+                      Personal
+                    </Button>
+                  </>
+                )}
+              </div>
             </article>
           ))}
         </div>
@@ -113,6 +184,20 @@ type Call = {
   transcript: string | null;
   transcription_error: string | null;
   recording_file: string | null;
+  staff_user_id: string | null;
+  staff_name: string | null;
+  contact_first_name: string | null;
+  contact_last_name: string | null;
+  organization_name: string | null;
+  tag_status: "untagged" | "matched" | "personal";
+  can_tag: boolean;
+};
+
+type Contact = {
+  id: string;
+  first_name: string | null;
+  last_name: string | null;
+  organization_name: string | null;
 };
 
 function formatDate(value: string | null) {

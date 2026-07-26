@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import https from "node:https";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type pg from "pg";
 
@@ -236,6 +236,154 @@ async function transcribePendingCalls(pool: pg.Pool) {
   return { attempted: rows.rowCount, completed };
 }
 
+export function normalizeYeastarPhone(value: unknown) {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) return null;
+  if (digits.startsWith("00")) return normalizeYeastarPhone(digits.slice(2));
+  if (digits.startsWith("27") && digits.length === 11) return `0${digits.slice(2)}`;
+  return digits;
+}
+
+export function yeastarExternalNumber(call: {
+  call_type?: unknown;
+  call_from_number?: unknown;
+  call_to_number?: unknown;
+}) {
+  const type = String(call.call_type ?? "").toLowerCase();
+  if (type.includes("inbound") || type === "incoming") return call.call_from_number;
+  if (type.includes("outbound") || type === "outgoing" || type === "external") {
+    return call.call_to_number;
+  }
+  return null;
+}
+
+function yeastarStaffExtension(call: {
+  call_type?: unknown;
+  call_from_number?: unknown;
+  call_to_number?: unknown;
+}) {
+  const type = String(call.call_type ?? "").toLowerCase();
+  if (type.includes("inbound") || type === "incoming") return call.call_to_number;
+  return call.call_from_number;
+}
+
+export async function deleteYeastarAudio(audioPath: string | null | undefined) {
+  if (!audioPath) return;
+  await unlink(audioPath).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  });
+}
+
+async function syncYeastarExtensions(pool: pg.Pool, token: string) {
+  const payload = await apiGet("extension/list", {
+    access_token: token,
+    page: "1",
+    page_size: "10000",
+    sort_by: "number",
+    order_by: "asc",
+  });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const extension of records(payload.data)) {
+      const extensionNumber =
+        stringValue(extension, "number") ?? stringValue(extension, "extension");
+      if (!extensionNumber) continue;
+      const email = stringValue(extension, "email");
+      await client.query(
+        `INSERT INTO yeastar_extension_mappings
+           (provider_extension, provider_name, provider_email, app_user_id, last_synced_at, updated_at)
+         SELECT $1, $2, $3::citext, u.id, now(), now()
+         FROM (SELECT 1) AS one
+         LEFT JOIN app_users u ON lower(u.email) = lower($3)
+         ON CONFLICT (provider_extension) DO UPDATE SET
+           provider_name = EXCLUDED.provider_name,
+           provider_email = EXCLUDED.provider_email,
+           app_user_id = EXCLUDED.app_user_id,
+           last_synced_at = now(), updated_at = now()`,
+        [extensionNumber, stringValue(extension, "name"), email],
+      );
+    }
+    await client.query("COMMIT");
+    return records(payload.data).length;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function matchYeastarCalls(pool: pg.Pool) {
+  const [contacts, extensions, personalRules, calls] = await Promise.all([
+    pool.query("SELECT id, organization_id, phone FROM contacts WHERE phone IS NOT NULL"),
+    pool.query("SELECT provider_extension, app_user_id FROM yeastar_extension_mappings"),
+    pool.query("SELECT normalized_number FROM yeastar_call_personal_rules WHERE active = true"),
+    pool.query(
+      `SELECT id, call_type, call_from_number, call_to_number, transcription_status, audio_path,
+              tag_status, staff_user_id, contact_id
+       FROM yeastar_calls`,
+    ),
+  ]);
+  const contactByNumber = new Map<string, { id: string; organizationId: string | null }>();
+  const ambiguousNumbers = new Set<string>();
+  for (const contact of contacts.rows) {
+    const normalized = normalizeYeastarPhone(contact.phone);
+    if (!normalized) continue;
+    if (contactByNumber.has(normalized)) ambiguousNumbers.add(normalized);
+    else
+      contactByNumber.set(normalized, { id: contact.id, organizationId: contact.organization_id });
+  }
+  for (const normalized of ambiguousNumbers) contactByNumber.delete(normalized);
+  const extensionToUser = new Map<string, string>();
+  for (const extension of extensions.rows) {
+    if (extension.app_user_id)
+      extensionToUser.set(String(extension.provider_extension), extension.app_user_id);
+  }
+  const personalNumbers = new Set(personalRules.rows.map((row) => String(row.normalized_number)));
+  let matched = 0;
+  let personal = 0;
+  let assigned = 0;
+  for (const call of calls.rows) {
+    const staffExtension = normalizeYeastarPhone(yeastarStaffExtension(call));
+    const staffUserId = staffExtension ? extensionToUser.get(staffExtension) : undefined;
+    const number = normalizeYeastarPhone(yeastarExternalNumber(call));
+    if (staffUserId && staffUserId !== call.staff_user_id) {
+      await pool.query(
+        "UPDATE yeastar_calls SET staff_user_id = $1, updated_at = now() WHERE id = $2",
+        [staffUserId, call.id],
+      );
+      assigned += 1;
+    }
+    if (call.tag_status !== "untagged" || !number) continue;
+    if (personalNumbers.has(number)) {
+      if (call.transcription_status === "completed") await deleteYeastarAudio(call.audio_path);
+      await pool.query(
+        `UPDATE yeastar_calls
+         SET tag_status = 'personal', matched_number = $1, contact_id = NULL, organization_id = NULL,
+             audio_path = CASE WHEN transcription_status = 'completed' THEN NULL ELSE audio_path END,
+             audio_mime_type = CASE WHEN transcription_status = 'completed' THEN NULL ELSE audio_mime_type END,
+             audio_size_bytes = CASE WHEN transcription_status = 'completed' THEN NULL ELSE audio_size_bytes END,
+             tagged_at = COALESCE(tagged_at, now()), updated_at = now()
+         WHERE id = $2`,
+        [number, call.id],
+      );
+      personal += 1;
+      continue;
+    }
+    const contact = contactByNumber.get(number);
+    if (contact) {
+      await pool.query(
+        `UPDATE yeastar_calls SET tag_status = 'matched', matched_number = $1, contact_id = $2,
+         organization_id = $3, updated_at = now() WHERE id = $4`,
+        [number, contact.id, contact.organizationId, call.id],
+      );
+      matched += 1;
+    }
+  }
+  return { matched, personal, assigned };
+}
+
 function records(value: unknown): JsonRecord[] {
   return Array.isArray(value)
     ? value.filter((item): item is JsonRecord => Boolean(item && typeof item === "object"))
@@ -278,6 +426,7 @@ export async function runYeastarPoll(pool: pg.Pool) {
       state.rows[0]?.backfill_minutes ?? process.env.YEASTAR_BACKFILL_MINUTES ?? 120,
     );
     const token = await getAccessToken();
+    const extensionCount = await syncYeastarExtensions(pool, token);
     const query = {
       access_token: token,
       page: "1",
@@ -375,6 +524,7 @@ export async function runYeastarPoll(pool: pg.Pool) {
         cdrCount: cdrs.length,
         recordingCount: recordings.length,
         upserted,
+        extensionCount,
         backfillMinutes,
       };
       await client.query(
@@ -389,7 +539,8 @@ export async function runYeastarPoll(pool: pg.Pool) {
       );
       await client.query("COMMIT");
       const transcription = await transcribePendingCalls(pool);
-      return { ok: true, ...result, transcription, startedAt: startedAt.toISOString() };
+      const matching = await matchYeastarCalls(pool);
+      return { ok: true, ...result, transcription, matching, startedAt: startedAt.toISOString() };
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       if (logId) {

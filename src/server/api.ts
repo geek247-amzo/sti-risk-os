@@ -3,7 +3,13 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import pg from "pg";
 import { PDFParse } from "pdf-parse";
-import { runYeastarPoll, startYeastarPoller } from "./yeastar";
+import {
+  deleteYeastarAudio,
+  normalizeYeastarPhone,
+  runYeastarPoll,
+  startYeastarPoller,
+  yeastarExternalNumber,
+} from "./yeastar";
 
 const { Pool } = pg;
 
@@ -161,16 +167,82 @@ async function yeastarCalls(request: Request) {
   const url = new URL(request.url);
   const limit = Math.min(200, Math.max(1, Number(url.searchParams.get("limit") ?? 100)));
   const rows = await getPool().query(
-    `SELECT id, provider_uid, call_time, call_type, call_from, call_from_name, call_from_number,
+    `SELECT yc.id, yc.provider_uid, yc.call_time, yc.call_type, yc.call_from, yc.call_from_name, yc.call_from_number,
             call_to, call_to_name, call_to_number, disposition, duration_seconds, recording_file,
             recording_size_bytes, transcription_status, transcript, transcript_model, transcribed_at,
-            transcription_error, created_at
-     FROM yeastar_calls
-     ORDER BY call_time DESC NULLS LAST, created_at DESC
+            transcription_error, yc.created_at, yc.staff_user_id, yc.contact_id, yc.organization_id,
+            yc.matched_number, yc.tag_status, yc.tagged_at, su.name AS staff_name,
+            c.first_name AS contact_first_name, c.last_name AS contact_last_name, o.name AS organization_name,
+            (yc.staff_user_id = $2) AS can_tag
+     FROM yeastar_calls yc
+     LEFT JOIN app_users su ON su.id = yc.staff_user_id
+     LEFT JOIN contacts c ON c.id = yc.contact_id
+     LEFT JOIN organizations o ON o.id = yc.organization_id
+     ORDER BY yc.call_time DESC NULLS LAST, yc.created_at DESC
      LIMIT $1`,
-    [limit],
+    [limit, auth.user.id],
   );
-  return json({ calls: rows.rows });
+  const contacts = await getPool().query(
+    `SELECT c.id, c.first_name, c.last_name, c.phone, c.organization_id, o.name AS organization_name
+     FROM contacts c LEFT JOIN organizations o ON o.id = c.organization_id
+     WHERE c.status IS DISTINCT FROM 'archived'
+     ORDER BY c.last_name NULLS LAST, c.first_name NULLS LAST
+     LIMIT 1000`,
+  );
+  return json({ calls: rows.rows, contacts: contacts.rows });
+}
+
+async function yeastarTagCall(request: Request, callId: string) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const body = asRecord(await readJson(request));
+  const personal = body.personal === true;
+  const contactId = optionalText(body.contactId);
+  if (!personal && !contactId) return json({ error: "Choose a customer or Personal" }, { status: 400 });
+
+  const call = await getPool().query(
+    `SELECT id, staff_user_id, call_type, call_from_number, call_to_number, transcription_status, audio_path
+     FROM yeastar_calls WHERE id = $1`,
+    [callId],
+  );
+  const row = call.rows[0];
+  if (!row) return json({ error: "Call not found" }, { status: 404 });
+  if (!row.staff_user_id || row.staff_user_id !== auth.user.id) {
+    return json({ error: "Only the staff member assigned to this call can tag it" }, { status: 403 });
+  }
+  const normalizedNumber = normalizeYeastarPhone(yeastarExternalNumber(row));
+  if (!normalizedNumber) return json({ error: "This call has no external number to tag" }, { status: 400 });
+
+  if (personal) {
+    await getPool().query(
+      `INSERT INTO yeastar_call_personal_rules (normalized_number, created_by, active, updated_at)
+       VALUES ($1, $2, true, now())
+       ON CONFLICT (normalized_number) DO UPDATE SET active = true, created_by = EXCLUDED.created_by, updated_at = now()`,
+      [normalizedNumber, auth.user.id],
+    );
+    if (row.transcription_status === "completed") await deleteYeastarAudio(row.audio_path);
+    await getPool().query(
+      `UPDATE yeastar_calls SET tag_status = 'personal', matched_number = $1, contact_id = NULL,
+       organization_id = NULL, audio_path = CASE WHEN transcription_status = 'completed' THEN NULL ELSE audio_path END,
+       audio_mime_type = CASE WHEN transcription_status = 'completed' THEN NULL ELSE audio_mime_type END,
+       audio_size_bytes = CASE WHEN transcription_status = 'completed' THEN NULL ELSE audio_size_bytes END,
+       tagged_by = $2, tagged_at = now(), updated_at = now() WHERE id = $3`,
+      [normalizedNumber, auth.user.id, callId],
+    );
+    return json({ ok: true, tagStatus: "personal" });
+  }
+
+  const contact = await getPool().query(
+    "SELECT id, organization_id FROM contacts WHERE id = $1",
+    [contactId],
+  );
+  if (!contact.rows[0]) return json({ error: "Customer not found" }, { status: 404 });
+  await getPool().query(
+    `UPDATE yeastar_calls SET tag_status = 'matched', matched_number = $1, contact_id = $2,
+     organization_id = $3, tagged_by = $4, tagged_at = now(), updated_at = now() WHERE id = $5`,
+    [normalizedNumber, contact.rows[0].id, contact.rows[0].organization_id, auth.user.id, callId],
+  );
+  return json({ ok: true, tagStatus: "matched" });
 }
 
 function parseCookies(request: Request) {
@@ -15398,6 +15470,9 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return yeastarPoll(request);
     if (request.method === "GET" && path === "/api/integrations/yeastar/calls")
       return yeastarCalls(request);
+    const yeastarTagMatch = path.match(/^\/api\/integrations\/yeastar\/calls\/([^/]+)\/tag$/);
+    if (request.method === "POST" && yeastarTagMatch)
+      return yeastarTagCall(request, yeastarTagMatch[1]);
 
     if (request.method === "POST" && path === "/api/internal/rag/search")
       return internalRagSearch(request);

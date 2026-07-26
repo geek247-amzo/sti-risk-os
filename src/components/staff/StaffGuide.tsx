@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Banknote,
   BarChart3,
@@ -513,7 +513,7 @@ export function StaffHelpMenu({
         <span className="hidden text-sm font-medium sm:inline">Help</span>
       </button>
       {open && (
-        <div className="staff-panel absolute right-0 top-12 z-50 w-[min(22rem,calc(100vw-2rem))] rounded-md border bg-white p-2 shadow-xl">
+        <div className="staff-panel absolute right-0 top-12 z-50 max-h-[calc(100vh-6rem)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto rounded-md border bg-white p-2 shadow-xl">
           <div className="px-3 pb-2 pt-2">
             <div className="text-sm font-semibold text-foreground">Guided help</div>
             <div className="mt-0.5 text-xs text-muted-foreground">
@@ -569,6 +569,7 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const navigate = useNavigate();
 
   useEffect(() => {
     if (request) {
@@ -587,6 +588,11 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
   }, [request]);
 
   const step = guideId ? guides[guideId].steps[stepIndex] : null;
+
+  useEffect(() => {
+    if (guideId !== "transaction" || !step?.route || pathname.startsWith(step.route)) return;
+    void navigate({ to: step.route as never });
+  }, [guideId, navigate, pathname, step]);
 
   useEffect(() => {
     if (!step?.target || (step.route && !pathname.startsWith(step.route))) {

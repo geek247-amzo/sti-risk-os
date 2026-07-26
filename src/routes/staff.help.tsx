@@ -45,7 +45,7 @@ function StaffHelpCenter() {
   const [activeGuide, setActiveGuide] = useState<GuideId | null>(null);
 
   return (
-    <div className="space-y-8">
+    <div className="h-full min-h-0 space-y-8 overflow-y-auto pr-1">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.2em] text-brand-blue">

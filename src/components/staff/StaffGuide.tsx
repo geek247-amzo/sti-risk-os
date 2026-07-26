@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Banknote,
   BarChart3,
@@ -29,10 +29,13 @@ export type GuideId =
   | "time"
   | "referrals"
   | "inspections"
-  | "reports";
+  | "reports"
+  | "transaction";
 
 export type GuideStep = {
   target?: string;
+  route?: string;
+  advanceOnClick?: boolean;
   eyebrow: string;
   title: string;
   body: string;
@@ -332,6 +335,47 @@ export const guides: Record<
       },
     ],
   },
+  transaction: {
+    label: "Guided transaction walkthrough",
+    description: "Walk the real quote-to-work path with tutorial records marked separately",
+    icon: Route,
+    steps: [
+      {
+        eyebrow: "Tutorial mode",
+        title: "A real workflow with safe records",
+        body: "This walkthrough follows the real STI Risk screens. Records created while Tutorial mode is active are marked separately and excluded from operating metrics.",
+      },
+      {
+        route: "/staff",
+        target: '[data-guide="nav-quotes"]',
+        advanceOnClick: true,
+        eyebrow: "01 · Start",
+        title: "Open Quotes",
+        body: "Click the real Quotes navigation item to begin the transaction.",
+      },
+      {
+        route: "/staff/quotes",
+        target: '[data-guide="transaction-new-quote"]',
+        advanceOnClick: true,
+        eyebrow: "02 · Quote",
+        title: "Create the quote",
+        body: "Click New Quote, complete the form, and submit it through the normal quote code path.",
+      },
+      {
+        route: "/staff/quotes/new",
+        target: '[data-guide="transaction-create-quote"]',
+        advanceOnClick: true,
+        eyebrow: "03 · Save",
+        title: "Submit the real form",
+        body: "Complete the required fields, then click Create Quote. Tutorial mode is attached automatically.",
+      },
+      {
+        eyebrow: "04 · Continue",
+        title: "Keep moving through the hand-offs",
+        body: "After the quote is created, continue through PO capture, field work, inspection/report review, sign-off, and billing using the same real screens. Close the guide at any point; tutorial records remain marked for safe cleanup.",
+      },
+    ],
+  },
 };
 
 const STORAGE_KEY = "sti-risk-staff-guide-completed";
@@ -420,11 +464,16 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
   const [guideId, setGuideId] = useState<GuideId | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   useEffect(() => {
     if (request) {
       setGuideId(request);
       setStepIndex(0);
+      if (request === "transaction") {
+        document.cookie = "sti_tutorial=1; Path=/; SameSite=Lax";
+        window.localStorage.setItem("sti-risk-transaction-guide", "active");
+      }
       return;
     }
     if (window.localStorage.getItem(STORAGE_KEY) !== "true") {
@@ -436,7 +485,7 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
   const step = guideId ? guides[guideId].steps[stepIndex] : null;
 
   useEffect(() => {
-    if (!step?.target) {
+    if (!step?.target || (step.route && !pathname.startsWith(step.route))) {
       setTargetRect(null);
       return;
     }
@@ -447,7 +496,17 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
     update();
     window.addEventListener("resize", update);
     return () => window.removeEventListener("resize", update);
-  }, [step]);
+  }, [pathname, step]);
+
+  useEffect(() => {
+    if (!step?.advanceOnClick || !step.target || (step.route && !pathname.startsWith(step.route)))
+      return;
+    const target = document.querySelector(step.target);
+    if (!target) return;
+    const advance = () => setStepIndex((value) => value + 1);
+    target.addEventListener("click", advance, true);
+    return () => target.removeEventListener("click", advance, true);
+  }, [pathname, step]);
 
   const cardStyle = useMemo(() => {
     if (!targetRect || typeof window === "undefined") return undefined;
@@ -463,6 +522,10 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
   if (!guideId || !step) return null;
   const total = guides[guideId].steps.length;
   const finish = () => {
+    if (guideId === "transaction") {
+      document.cookie = "sti_tutorial=; Path=/; Max-Age=0; SameSite=Lax";
+      window.localStorage.removeItem("sti-risk-transaction-guide");
+    }
     window.localStorage.setItem(STORAGE_KEY, "true");
     setGuideId(null);
     onClose();
@@ -470,12 +533,12 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
 
   return (
     <div
-      className="fixed inset-0 z-[100]"
+      className={`fixed inset-0 z-[100] ${step.advanceOnClick ? "pointer-events-none" : ""}`}
       role="dialog"
       aria-modal="true"
       aria-label={guides[guideId].label}
     >
-      <div className="absolute inset-0 bg-slate-950/55 backdrop-blur-[1px]" />
+      <div className="pointer-events-none absolute inset-0 bg-slate-950/55 backdrop-blur-[1px]" />
       {targetRect && (
         <div
           className="pointer-events-none fixed rounded-md border-2 border-amber-400 bg-white/5 shadow-[0_0_0_5px_rgba(245,158,11,0.18)] transition-all"
@@ -488,7 +551,7 @@ export function StaffGuide({ request, onClose }: { request: GuideId | null; onCl
         />
       )}
       <section
-        className={`staff-guide-card fixed overflow-hidden rounded-md border border-white/15 bg-white shadow-2xl ${targetRect ? "" : "left-1/2 top-1/2 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2"}`}
+        className={`pointer-events-auto staff-guide-card fixed overflow-hidden rounded-md border border-white/15 bg-white shadow-2xl ${targetRect ? "" : "left-1/2 top-1/2 w-[min(28rem,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2"}`}
         style={cardStyle}
       >
         <div className="h-1 bg-slate-100">

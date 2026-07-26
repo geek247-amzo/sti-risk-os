@@ -257,6 +257,10 @@ function parseCookies(request: Request) {
   return cookies;
 }
 
+function isTutorialRequest(request: Request) {
+  return parseCookies(request).get("sti_tutorial") === "1";
+}
+
 function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -1049,9 +1053,9 @@ async function createQuoteDraftRecord(
 
   const inserted = await client.query(
     `INSERT INTO quotes (
-      quote_number, organization_id, site_id, created_by, valid_until, client_reference, notes
+      quote_number, organization_id, site_id, created_by, valid_until, client_reference, notes, is_tutorial
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
      RETURNING id, quote_number`,
     [
       quoteNumber(),
@@ -1061,6 +1065,7 @@ async function createQuoteDraftRecord(
       optionalText(body.validUntil),
       optionalText(body.clientReference),
       optionalText(body.notes),
+      body.isTutorial === true,
     ],
   );
   const quoteId = inserted.rows[0].id as string;
@@ -4173,6 +4178,7 @@ async function workBoard(request: Request) {
 
   if (request.method === "POST") {
     const body = await readJson(request);
+    body.isTutorial = isTutorialRequest(request);
     const client = await getPool().connect();
     try {
       await client.query("BEGIN");
@@ -4790,6 +4796,7 @@ async function invoices(request: Request) {
 
   if (request.method === "POST") {
     const body = await readJson(request);
+    body.isTutorial = isTutorialRequest(request);
     const totalCents = centsFromValue(body.total);
     const projectId = optionalText(body.projectId);
     const dealId = optionalText(body.dealId);
@@ -4805,12 +4812,12 @@ async function invoices(request: Request) {
       if (!signedOff) return json({ error: "Awaiting client sign-off" }, { status: 409 });
     }
     const result = await getPool().query(
-      `INSERT INTO invoices (
+        `INSERT INTO invoices (
         invoice_number, organization_id, project_id, deal_id, client_po_id, sales_order_id,
-        work_item_id, owner_id, status,
+        work_item_id, owner_id, status, is_tutorial,
         subtotal_cents, tax_cents, total_cents, issued_on, due_on, notes
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'draft'), $10, $11, $12, $13, $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, 'draft'), $10, $11, $12, $13, $14, $15, $16)
        RETURNING id`,
       [
         optionalText(body.invoiceNumber),
@@ -4822,6 +4829,7 @@ async function invoices(request: Request) {
         optionalText(body.workItemId),
         auth.user.id,
         optionalText(body.status),
+        body.isTutorial === true,
         totalCents,
         0,
         totalCents,
@@ -4846,6 +4854,7 @@ async function invoices(request: Request) {
     LEFT JOIN client_pos cp ON cp.id = i.client_po_id
     LEFT JOIN sales_orders so ON so.id = i.sales_order_id
     LEFT JOIN work_items wi ON wi.id = i.work_item_id
+    WHERE i.is_tutorial = false
     ORDER BY i.due_on ASC NULLS LAST, i.created_at DESC
     LIMIT 100
   `);
@@ -5306,6 +5315,7 @@ async function createSalesOrderDraftForClientPo(
     sageReference?: string | null;
     total?: unknown;
     createdBy: string;
+    isTutorial?: boolean;
   },
 ) {
   const po = await client.query(
@@ -5321,9 +5331,9 @@ async function createSalesOrderDraftForClientPo(
   const result = await client.query(
     `INSERT INTO sales_orders (
       organization_id, client_po_id, quote_id, project_id, work_item_id, sales_order_number,
-      status, sage_reference, total_cents, created_by
+      status, sage_reference, total_cents, created_by, is_tutorial
      )
-     VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9)
+     VALUES ($1, $2, $3, $4, $5, $6, 'draft', $7, $8, $9, $10)
      RETURNING id`,
     [
       row.organization_id,
@@ -5335,6 +5345,7 @@ async function createSalesOrderDraftForClientPo(
       params.sageReference ?? null,
       centsFromValue(params.total) || Number(row.amount_cents ?? 0),
       params.createdBy,
+      params.isTutorial === true,
     ],
   );
   await client.query(
@@ -5350,6 +5361,7 @@ async function poInbox(request: Request) {
 
   if (request.method === "POST") {
     const body = await readJson(request);
+    body.isTutorial = isTutorialRequest(request);
     const quoteId = optionalText(body.quoteId);
     const client = await getPool().connect();
 
@@ -5377,9 +5389,9 @@ async function poInbox(request: Request) {
       const result = await client.query(
         `INSERT INTO client_pos (
           organization_id, site_id, project_id, work_item_id, quote_id, uploaded_by,
-          po_number, status, amount_cents, received_on, file_name, extracted_payload
+          po_number, status, amount_cents, received_on, file_name, extracted_payload, is_tutorial
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, current_date), $11, $12::jsonb)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, current_date), $11, $12::jsonb, $13)
          RETURNING id`,
         [
           organizationId,
@@ -5401,6 +5413,7 @@ async function poInbox(request: Request) {
               matched: Boolean(quoteRow),
             }),
           ),
+          body.isTutorial === true,
         ],
       );
 
@@ -5410,6 +5423,7 @@ async function poInbox(request: Request) {
           clientPoId: result.rows[0].id,
           createdBy: auth.user.id,
           total: quoteRow.total_value_cents,
+          isTutorial: body.isTutorial === true,
         });
       }
 
@@ -5453,6 +5467,7 @@ async function poInbox(request: Request) {
       LEFT JOIN quotes q ON q.id = cp.quote_id
       LEFT JOIN projects p ON p.id = cp.project_id
       LEFT JOIN sales_orders so ON so.client_po_id = cp.id
+      WHERE cp.is_tutorial = false
       ORDER BY cp.created_at DESC
       LIMIT 200
     `),
@@ -5461,7 +5476,7 @@ async function poInbox(request: Request) {
       FROM quotes q
       JOIN organizations o ON o.id = q.organization_id
       JOIN sites s ON s.id = q.site_id
-      WHERE q.status IN ('sent_to_client', 'accepted', 'approved_internal')
+      WHERE q.is_tutorial = false AND q.status IN ('sent_to_client', 'accepted', 'approved_internal')
       ORDER BY q.updated_at DESC
       LIMIT 200
     `),
@@ -5475,6 +5490,7 @@ async function salesOrderDraft(request: Request) {
   if (auth.response) return auth.response;
 
   const body = await readJson(request);
+  body.isTutorial = isTutorialRequest(request);
   const clientPoId = requireText(body.clientPoId, "Client PO");
   const client = await getPool().connect();
 
@@ -5486,6 +5502,7 @@ async function salesOrderDraft(request: Request) {
       sageReference: optionalText(body.sageReference),
       total: body.total,
       createdBy: auth.user.id,
+      isTutorial: body.isTutorial === true,
     });
     if (!salesOrderId) {
       await client.query("ROLLBACK");
@@ -5510,12 +5527,13 @@ async function fieldWork(request: Request) {
 
   if (request.method === "POST") {
     const body = await readJson(request);
+    body.isTutorial = isTutorialRequest(request);
     const result = await getPool().query(
-      `INSERT INTO work_items (
+        `INSERT INTO work_items (
         organization_id, site_id, building_id, area_id, asset_id, project_id, deal_id, quote_id,
-        owner_id, title, work_type, status, priority, scope, scheduled_for
+        owner_id, title, work_type, status, priority, scope, scheduled_for, is_tutorial
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, 'service'), COALESCE($12, 'new'), COALESCE($13, 'medium'), $14, $15)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, 'service'), COALESCE($12, 'new'), COALESCE($13, 'medium'), $14, $15, $16)
        RETURNING id`,
       [
         optionalText(body.organizationId),
@@ -5533,6 +5551,7 @@ async function fieldWork(request: Request) {
         optionalText(body.priority),
         optionalText(body.scope),
         optionalText(body.scheduledFor),
+        body.isTutorial === true,
       ],
     );
     await audit(getPool(), "create_work_item", "work_item", result.rows[0].id, {}, auth.user);
@@ -5556,6 +5575,7 @@ async function fieldWork(request: Request) {
     LEFT JOIN field_submissions fs ON fs.work_item_id = wi.id
     LEFT JOIN job_cards jc ON jc.work_item_id = wi.id
     LEFT JOIN service_reports sr ON sr.work_item_id = wi.id
+    WHERE wi.is_tutorial = false
     GROUP BY wi.id, o.name, s.name, p.name
     ORDER BY wi.scheduled_for ASC NULLS LAST, wi.updated_at DESC
     LIMIT 200
@@ -8048,6 +8068,7 @@ async function quotes(request: Request) {
 
   if (request.method === "POST") {
     const body = await readJson(request);
+    body.isTutorial = isTutorialRequest(request);
     const client = await getPool().connect();
     try {
       await client.query("BEGIN");
@@ -8090,6 +8111,7 @@ async function quotes(request: Request) {
     JOIN sites s ON s.id = q.site_id
     LEFT JOIN app_users u ON u.id = q.created_by
     LEFT JOIN latest_validation lv ON lv.quote_id = q.id
+    WHERE q.is_tutorial = false
     ORDER BY q.updated_at DESC
     LIMIT 150
   `);
@@ -9148,8 +9170,8 @@ async function reportsSummary(request: Request) {
   `),
     pool.query(`
       SELECT
-        COALESCE((SELECT sum(total_value_cents)::int FROM quotes WHERE status IN ('sent_to_client', 'accepted')), 0) AS quoted_value_cents,
-        COALESCE((SELECT sum(total_cents)::int FROM invoices WHERE status <> 'void'), 0) AS invoiced_value_cents,
+        COALESCE((SELECT sum(total_value_cents)::int FROM quotes WHERE is_tutorial = false AND status IN ('sent_to_client', 'accepted')), 0) AS quoted_value_cents,
+        COALESCE((SELECT sum(total_cents)::int FROM invoices WHERE is_tutorial = false AND status <> 'void'), 0) AS invoiced_value_cents,
         COALESCE((SELECT sum(amount_cents)::int FROM invoice_payments), 0) AS collected_value_cents
     `),
     pool.query(`
@@ -9164,6 +9186,7 @@ async function reportsSummary(request: Request) {
         count(*) FILTER (WHERE status = 'accepted')::int AS won,
         count(*) FILTER (WHERE status IN ('accepted', 'rejected'))::int AS decided
       FROM quotes
+      WHERE is_tutorial = false
     `),
     pool.query(`
       SELECT
@@ -9171,6 +9194,7 @@ async function reportsSummary(request: Request) {
         count(*) FILTER (WHERE status IN ('complete', 'invoiced'))::int AS completed,
         count(*)::int AS total
       FROM work_items
+      WHERE is_tutorial = false
     `),
   ]);
 
@@ -9215,8 +9239,8 @@ async function managementReport(request: Request) {
   const [revenue, opportunities, quotations, serviceDelivery] = await Promise.all([
     getPool().query(
       `SELECT
-         COALESCE((SELECT sum(total_value_cents)::int FROM quotes WHERE created_at >= $1 AND created_at < $2 AND status IN ('sent_to_client', 'accepted')), 0) AS quoted_value_cents,
-         COALESCE((SELECT sum(total_cents)::int FROM invoices WHERE created_at >= $1 AND created_at < $2 AND status <> 'void'), 0) AS invoiced_value_cents,
+         COALESCE((SELECT sum(total_value_cents)::int FROM quotes WHERE is_tutorial = false AND created_at >= $1 AND created_at < $2 AND status IN ('sent_to_client', 'accepted')), 0) AS quoted_value_cents,
+         COALESCE((SELECT sum(total_cents)::int FROM invoices WHERE is_tutorial = false AND created_at >= $1 AND created_at < $2 AND status <> 'void'), 0) AS invoiced_value_cents,
          COALESCE((SELECT sum(amount_cents)::int FROM invoice_payments WHERE paid_at >= $1 AND paid_at < $2), 0) AS collected_value_cents`,
       [periodStart, periodEnd],
     ),
@@ -9234,7 +9258,7 @@ async function managementReport(request: Request) {
          count(*) FILTER (WHERE status = 'accepted')::int AS won,
          count(*) FILTER (WHERE status IN ('accepted', 'rejected'))::int AS decided
        FROM quotes
-       WHERE created_at >= $1 AND created_at < $2`,
+       WHERE is_tutorial = false AND created_at >= $1 AND created_at < $2`,
       [periodStart, periodEnd],
     ),
     getPool().query(
@@ -9243,7 +9267,7 @@ async function managementReport(request: Request) {
          count(*) FILTER (WHERE status IN ('complete', 'invoiced'))::int AS completed,
          count(*) FILTER (WHERE status NOT IN ('complete', 'invoiced', 'cancelled'))::int AS open
        FROM work_items
-       WHERE created_at >= $1 AND created_at < $2`,
+       WHERE is_tutorial = false AND created_at >= $1 AND created_at < $2`,
       [periodStart, periodEnd],
     ),
   ]);

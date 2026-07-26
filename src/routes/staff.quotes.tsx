@@ -176,6 +176,7 @@ function Quotes() {
           </button>
           <Link
             to="/staff/quotes/new"
+            data-guide="transaction-new-quote"
             className="inline-flex items-center gap-2 rounded-md bg-brand-orange px-3 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110"
           >
             <Plus className="h-4 w-4" /> New Quote

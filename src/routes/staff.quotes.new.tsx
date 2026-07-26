@@ -50,7 +50,8 @@ const blankLine: Line = {
 function toTemplateLine(raw: Record<string, unknown>): Line {
   const lineTypeRaw = String(raw.lineType ?? raw.line_type ?? "").trim();
   const hasPart =
-    Boolean(raw.partId ?? raw.part_id ?? raw.partCode ?? raw.part_code) || lineTypeRaw === "technology";
+    Boolean(raw.partId ?? raw.part_id ?? raw.partCode ?? raw.part_code) ||
+    lineTypeRaw === "technology";
   const lineType = (["technology", "labor_travel_accommodation", "sla"] as const).includes(
     lineTypeRaw as Line["lineType"],
   )
@@ -60,17 +61,9 @@ function toTemplateLine(raw: Record<string, unknown>): Line {
       : "labor_travel_accommodation";
   const quantity = raw.quantity ?? raw.qty ?? 1;
   const unitCost =
-    raw.unitCost ??
-    raw.unit_cost ??
-    raw.unit_cost_cents ??
-    raw.default_unit_cost_cents ??
-    "";
+    raw.unitCost ?? raw.unit_cost ?? raw.unit_cost_cents ?? raw.default_unit_cost_cents ?? "";
   const unitPrice =
-    raw.unitPrice ??
-    raw.unit_price ??
-    raw.unit_price_cents ??
-    raw.default_unit_price_cents ??
-    "";
+    raw.unitPrice ?? raw.unit_price ?? raw.unit_price_cents ?? raw.default_unit_price_cents ?? "";
 
   return {
     lineType,
@@ -181,11 +174,12 @@ function NewQuote() {
     const current = lines[index];
     updateLine(index, {
       lineType,
-      partId: lineType === "technology" ? current?.partId ?? "" : "",
-      partCode: lineType === "technology" ? current?.partCode ?? "" : "",
-      description: lineType === "technology" && current?.lineType === "technology" ? current.description : "",
-      unitCost: lineType === "technology" ? current?.unitCost ?? "" : "0",
-      unitPrice: lineType === "technology" ? current?.unitPrice ?? "" : "0",
+      partId: lineType === "technology" ? (current?.partId ?? "") : "",
+      partCode: lineType === "technology" ? (current?.partCode ?? "") : "",
+      description:
+        lineType === "technology" && current?.lineType === "technology" ? current.description : "",
+      unitCost: lineType === "technology" ? (current?.unitCost ?? "") : "0",
+      unitPrice: lineType === "technology" ? (current?.unitPrice ?? "") : "0",
     });
   }
 
@@ -260,6 +254,7 @@ function NewQuote() {
           </p>
         </div>
         <button
+          data-guide="transaction-create-quote"
           disabled={saving || loading}
           className="inline-flex items-center gap-2 rounded-md bg-brand-orange px-4 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110 disabled:opacity-70"
         >
@@ -293,15 +288,19 @@ function NewQuote() {
               if (typeof data.organizationId === "string") setOrganizationId(data.organizationId);
               if (typeof data.siteId === "string") setSiteId(data.siteId);
               if (typeof data.siteName === "string") setSiteName(data.siteName);
-              if (typeof data.siteAssetFamily === "string") setSiteAssetFamily(data.siteAssetFamily);
+              if (typeof data.siteAssetFamily === "string")
+                setSiteAssetFamily(data.siteAssetFamily);
               if (typeof data.siteAssetModel === "string") setSiteAssetModel(data.siteAssetModel);
               if (typeof data.siteAssetNotes === "string") setSiteAssetNotes(data.siteAssetNotes);
               if (typeof data.validUntil === "string") setValidUntil(data.validUntil);
-              if (typeof data.clientReference === "string") setClientReference(data.clientReference);
+              if (typeof data.clientReference === "string")
+                setClientReference(data.clientReference);
               if (typeof data.notes === "string") setNotes(data.notes);
               const templateLines = Array.isArray(data.lines) ? data.lines : [];
               if (templateLines.length) {
-                setLines(templateLines.map((line) => toTemplateLine(line as Record<string, unknown>)));
+                setLines(
+                  templateLines.map((line) => toTemplateLine(line as Record<string, unknown>)),
+                );
               }
             }}
             className="h-10 w-full rounded-md border border-border bg-background px-3 outline-none focus:border-brand-orange"

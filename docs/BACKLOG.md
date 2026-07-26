@@ -84,6 +84,12 @@ Confirmed sequence: E1 authentication → E2 recordings/CDR → E3 Gemini 2.5 Fl
 
 E4 intentionally does not add fuzzy matching, supervisor reassignment, customer-facing call visibility, or audio retention for Personal calls.
 
+- E5 — **complete and live**, follow-up to E4. `/staff/voice` is now linked in the staff sidebar by E9 and non-admin staff users see only calls assigned to their own extension; admins retain internal oversight access.
+- E6 — **complete and live**, follow-up to E4. The same Voice panel exposes each staff member’s unmatched-call tagging queue with customer linking and Personal actions. Tagging remains self-service and unauthorized reassignment returns 403.
+- E7 — **not started**. Customer-record call history remains the next customer-facing internal view.
+- E8 — **not started**. Transcript RAG indexing remains deferred until the call-history surface is defined.
+- E9 — **complete and live**, commit `44b5102`. Added Voice to the Operate staff navigation so `/staff/voice` is discoverable and receives the existing `data-guide="nav-voice"` target.
+
 ## Stream F — Inspection closeout and verification
 
 - F1 — **complete**, commit `15fd893`. Browser print/save PDF export with print-specific styling.

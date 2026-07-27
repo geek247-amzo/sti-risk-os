@@ -62,6 +62,8 @@ type ChatEntity = {
   href: string;
 };
 
+const activeChatStorageKey = "sti-risk-active-chat-session";
+
 function entityIcon(type: ChatEntity["type"]) {
   if (type === "customer" || type === "client") return Building2;
   if (type === "project") return FolderKanban;
@@ -245,8 +247,11 @@ function Chat() {
       const loaded = (body.sessions ?? []) as ChatSession[];
       if (loaded.length) {
         setSessions(loaded);
-        setActiveSessionId(loaded[0].id);
-        await loadMessages(loaded[0].id);
+        const storedId = window.localStorage.getItem(activeChatStorageKey);
+        const active = loaded.find((session) => session.id === storedId) ?? loaded[0];
+        window.localStorage.setItem(activeChatStorageKey, active.id);
+        setActiveSessionId(active.id);
+        await loadMessages(active.id);
       } else {
         await createSession();
       }
@@ -281,6 +286,7 @@ function Chat() {
     const session = body.session as ChatSession;
     setSessions((current) => [session, ...current.filter((item) => item.id !== session.id)]);
     setActiveSessionId(session.id);
+    window.localStorage.setItem(activeChatStorageKey, session.id);
     setMessages([]);
     setAttachments([]);
     setPendingAttachments([]);
@@ -307,6 +313,7 @@ function Chat() {
 
   async function selectSession(sessionId: string) {
     setActiveSessionId(sessionId);
+    window.localStorage.setItem(activeChatStorageKey, sessionId);
     await loadMessages(sessionId);
   }
 

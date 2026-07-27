@@ -150,6 +150,132 @@ type SearchResult = {
   metadata: Record<string, unknown> | null;
 };
 
+type DockedChatMessage = { id: string; role: "user" | "assistant" | "system"; content: string };
+
+const activeChatStorageKey = "sti-risk-active-chat-session";
+
+function DockedSteveChat() {
+  const [sessionId, setSessionId] = useState("");
+  const [messages, setMessages] = useState<DockedChatMessage[]>([]);
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      try {
+        const sessionsResponse = await fetch("/api/staff/chat/sessions");
+        const sessionsBody = await sessionsResponse.json();
+        if (!sessionsResponse.ok) throw new Error(sessionsBody.error ?? "Unable to load chats");
+        const sessions = sessionsBody.sessions ?? [];
+        const storedId = window.localStorage.getItem(activeChatStorageKey);
+        const session = sessions.find((item: { id: string }) => item.id === storedId) ?? sessions[0];
+        let active = session;
+        if (!active) {
+          const createdResponse = await fetch("/api/staff/chat/sessions", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ title: "New chat" }),
+          });
+          const createdBody = await createdResponse.json();
+          if (!createdResponse.ok) throw new Error(createdBody.error ?? "Unable to create chat");
+          active = createdBody.session;
+        }
+        const messagesResponse = await fetch(`/api/staff/chat/sessions/${active.id}/messages`);
+        const messagesBody = await messagesResponse.json();
+        if (!messagesResponse.ok) throw new Error(messagesBody.error ?? "Unable to load messages");
+        if (cancelled) return;
+        window.localStorage.setItem(activeChatStorageKey, active.id);
+        setSessionId(active.id);
+        setMessages(messagesBody.messages ?? []);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Steve is unavailable");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function send(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const content = message.trim();
+    if (!content || !sessionId || sending) return;
+    setSending(true);
+    setError("");
+    setMessage("");
+    const optimisticId = `docked-${Date.now()}`;
+    setMessages((current) => [...current, { id: optimisticId, role: "user", content }]);
+    try {
+      const response = await fetch(`/api/staff/chat/sessions/${sessionId}/messages`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ content, attachmentIds: [], entityReferences: [] }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error ?? "Steve did not respond");
+      setMessages((current) => [
+        ...current.filter((item) => item.id !== optimisticId),
+        body.userMessage,
+        body.assistantMessage,
+      ]);
+    } catch (err) {
+      setMessages((current) => current.filter((item) => item.id !== optimisticId));
+      setMessage(content);
+      setError(err instanceof Error ? err.message : "Steve did not respond");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex-1 space-y-3 overflow-y-auto bg-slate-50 p-4">
+        {loading ? (
+          <div className="text-sm text-muted-foreground">Loading conversation…</div>
+        ) : messages.length ? (
+          messages.slice(-8).map((item) => (
+            <div key={item.id} className={`flex ${item.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div className={`max-w-[88%] rounded-2xl px-3 py-2 text-sm leading-5 ${item.role === "user" ? "rounded-br-sm bg-brand-blue text-white" : "rounded-bl-sm border border-slate-200 bg-white text-slate-700 shadow-sm"}`}>
+                {item.content}
+              </div>
+            </div>
+          ))
+        ) : (
+          <div className="rounded-xl border border-brand-blue/15 bg-brand-blue/5 p-3 text-sm leading-5 text-slate-600">
+            Ask Steve about clients, quotes, projects, field work, reports, or calls.
+          </div>
+        )}
+        {error && <div className="rounded-md bg-red-50 p-2 text-xs text-red-700">{error}</div>}
+      </div>
+      <form onSubmit={(event) => void send(event)} className="flex items-end gap-2 border-t border-slate-200 bg-white p-3">
+        <textarea
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
+          placeholder="Message Steve…"
+          rows={2}
+          disabled={loading || sending}
+          className="min-h-11 min-w-0 flex-1 resize-none rounded-lg border border-border bg-white px-3 py-2 text-sm outline-none focus:border-brand-blue disabled:opacity-60"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+        />
+        <button type="submit" disabled={loading || sending || !message.trim()} className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-brand-orange text-primary-foreground hover:brightness-110 disabled:opacity-50" aria-label="Send message">
+          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquare className="h-4 w-4" />}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function resultLabel(result: SearchResult) {
   return result.entity_type.replaceAll("_", " ");
 }
@@ -544,19 +670,7 @@ function StaffLayout() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="flex flex-1 flex-col justify-end gap-3 overflow-y-auto bg-slate-50 p-4">
-              <div className="flex items-end gap-2">
-                <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-blue/10 text-brand-blue">
-                  <Bot className="h-4 w-4" />
-                </div>
-                <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-3 py-2.5 text-sm leading-5 text-slate-700 shadow-sm">
-                  Ask me about clients, quotes, projects, field work, reports, or calls.
-                </div>
-              </div>
-              <div className="rounded-xl border border-brand-blue/15 bg-brand-blue/5 p-3 text-xs leading-5 text-slate-600">
-                Open the full chat when you need conversation history, file uploads, linked records, or longer answers.
-              </div>
-            </div>
+            <DockedSteveChat />
             <div className="border-t border-slate-200 bg-white p-3">
               <Link
                 to="/staff/chat"

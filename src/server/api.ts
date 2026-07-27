@@ -2348,12 +2348,15 @@ async function microsoftEmails(request: Request) {
   const auth = await requireUser(request, ["admin", "staff", "agent"]);
   if (auth.response) return auth.response;
   const url = new URL(request.url);
-  const top = Math.min(25, Math.max(5, Number(url.searchParams.get("top") ?? 12)));
+  const top = Math.min(50, Math.max(5, Number(url.searchParams.get("top") ?? 12)));
   const data = await microsoftGraphRequest<{ value?: Record<string, unknown>[] }>(
     auth.user,
     `/me/mailFolders/inbox/messages?$top=${top}&$orderby=receivedDateTime desc&$select=id,subject,from,receivedDateTime,bodyPreview,isRead,webLink,importance`,
   );
-  return json({ emails: data.value ?? [] });
+  return json(
+    { emails: data.value ?? [] },
+    { headers: { "cache-control": "no-store, no-cache, must-revalidate" } },
+  );
 }
 
 async function microsoftEmailDetail(request: Request, messageId: string) {

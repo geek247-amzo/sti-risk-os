@@ -128,7 +128,9 @@ function Email() {
   }
 
   async function loadInbox() {
-    const response = await fetch("/api/microsoft/emails?top=25");
+    const response = await fetch(`/api/microsoft/emails?top=50&ts=${Date.now()}`, {
+      cache: "no-store",
+    });
     const body = await response.json();
     if (!response.ok) throw new Error(apiError(body, "Unable to load Microsoft inbox"));
     const loaded = (body.emails ?? []) as MicrosoftEmail[];

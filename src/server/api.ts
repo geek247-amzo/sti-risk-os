@@ -1155,15 +1155,31 @@ async function createProjectDraftRecord(
   const deal = linkedDeal?.rows[0] ?? null;
   const name = optionalText(body.name) ?? deal?.title;
   if (!name) throw Object.assign(new Error("Project name is required"), { status: 400 });
+  const organizationId = optionalText(body.organizationId) ?? deal?.organization_id ?? null;
+  const siteId = optionalText(body.siteId);
+  if (!organizationId) {
+    throw Object.assign(new Error("Client is required"), { status: 400 });
+  }
+  if (!siteId) {
+    throw Object.assign(new Error("Site is required"), { status: 400 });
+  }
+  const site = await client.query(
+    "SELECT id FROM sites WHERE id = $1 AND organization_id = $2",
+    [siteId, organizationId],
+  );
+  if (!site.rows[0]) {
+    throw Object.assign(new Error("Site not found for selected client"), { status: 400 });
+  }
   const budgetCents = centsFromValue(body.budget) || Number(deal?.value_cents ?? 0);
   const result = await client.query(
     `INSERT INTO projects (
-      organization_id, deal_id, owner_id, name, status, priority, budget_cents, currency, description, due_on
+      organization_id, site_id, deal_id, owner_id, name, status, priority, budget_cents, currency, description, due_on
      )
-     VALUES ($1, $2, $3, $4, COALESCE($5, 'active'), COALESCE($6, 'medium'), $7, COALESCE($8, 'ZAR'), $9, $10)
+     VALUES ($1, $2, $3, $4, $5, COALESCE($6, 'active'), COALESCE($7, 'medium'), $8, COALESCE($9, 'ZAR'), $10, $11)
      RETURNING id`,
     [
-      body.organizationId ?? deal?.organization_id ?? null,
+      organizationId,
+      siteId,
       dealId,
       deal?.owner_id ?? actorId,
       name,
@@ -4908,15 +4924,17 @@ async function projects(request: Request) {
 
   const rows = await getPool().query(`
     SELECT p.id, p.name, p.status, p.priority, p.budget_cents, p.currency, p.due_on,
-      o.name AS organization_name, d.id AS deal_id, d.title AS deal_title,
+      p.site_id, o.name AS organization_name, s.name AS site_name,
+      d.id AS deal_id, d.title AS deal_title,
       count(DISTINCT de.id)::int AS deliverables,
       count(DISTINCT t.id) FILTER (WHERE t.status IN ('open', 'blocked'))::int AS active_tasks
     FROM projects p
     LEFT JOIN organizations o ON o.id = p.organization_id
     LEFT JOIN deals d ON d.id = p.deal_id
+    LEFT JOIN sites s ON s.id = p.site_id
     LEFT JOIN deliverables de ON de.project_id = p.id
     LEFT JOIN tasks t ON t.project_id = p.id
-    GROUP BY p.id, o.name, d.id, d.title
+    GROUP BY p.id, o.name, s.name, d.id, d.title
     ORDER BY p.updated_at DESC
     LIMIT 100
   `);

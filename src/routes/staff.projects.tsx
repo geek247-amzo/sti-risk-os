@@ -28,6 +28,8 @@ type Project = {
   currency: string;
   due_on: string | null;
   organization_name: string | null;
+  site_id: string | null;
+  site_name: string | null;
   deal_title: string | null;
   deal_id?: string | null;
   deliverables: number;
@@ -91,6 +93,8 @@ function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pipelineDeals, setPipelineDeals] = useState<PipelineDeal[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
+  const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(true);
@@ -130,6 +134,20 @@ function Projects() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!selectedClientId) {
+      setSites([]);
+      return;
+    }
+    fetch(`/api/clients/${encodeURIComponent(selectedClientId)}`)
+      .then(async (response) => {
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? "Sites failed to load");
+        setSites(body.sites ?? []);
+      })
+      .catch(() => setSites([]));
+  }, [selectedClientId]);
 
   const filteredProjects = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -184,6 +202,7 @@ function Projects() {
           name: projectName,
           dealId: selectedDealId || null,
           organizationId: formData.get("organizationId") || selectedDeal?.organizationId || null,
+          siteId: formData.get("siteId") || null,
           status: formData.get("status"),
           priority: formData.get("priority"),
           budget: formData.get("budget"),
@@ -410,12 +429,28 @@ function Projects() {
               <select
                 name="organizationId"
                 defaultValue=""
+                onChange={(event) => setSelectedClientId(event.target.value)}
                 className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
               >
                 <option value="">Select a client</option>
                 {clients.map((client) => (
                   <option key={client.id} value={client.id}>
                     {client.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Site</span>
+              <select
+                name="siteId"
+                required
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
+              >
+                <option value="">Select a site</option>
+                {sites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name}
                   </option>
                 ))}
               </select>

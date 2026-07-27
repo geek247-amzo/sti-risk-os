@@ -188,6 +188,7 @@ function StaffLayout() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [activeGuide, setActiveGuide] = useState<GuideId | null>(null);
   const [bugReportOpen, setBugReportOpen] = useState(false);
+  const [steveWidgetOpen, setSteveWidgetOpen] = useState(false);
 
   useEffect(() => {
     if (pathname === "/staff/login") return;
@@ -515,6 +516,40 @@ function StaffLayout() {
         <main className="staff-main h-[calc(100vh-4.5rem)] min-h-0 min-w-0 flex-1 overflow-y-scroll p-4 text-foreground sm:p-6 lg:p-8">
           <Outlet />
         </main>
+      </div>
+      <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
+        {steveWidgetOpen && (
+          <div className="w-72 rounded-xl border border-border/70 bg-white p-4 shadow-2xl">
+            <div className="flex items-start gap-3">
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-blue text-white">
+                <Bot className="h-5 w-5" />
+              </div>
+              <div>
+                <div className="font-semibold">Ask Steve</div>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  Ask questions across your authorised STI Risk context, quotes, work, and reports.
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/staff/chat"
+              onClick={() => setSteveWidgetOpen(false)}
+              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-brand-orange px-3 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110"
+            >
+              <MessageSquare className="h-4 w-4" /> Open Steve Chat
+            </Link>
+          </div>
+        )}
+        <button
+          type="button"
+          aria-expanded={steveWidgetOpen}
+          aria-label={steveWidgetOpen ? "Close Ask Steve" : "Open Ask Steve"}
+          onClick={() => setSteveWidgetOpen((open) => !open)}
+          className="inline-flex items-center gap-2 rounded-full bg-brand-blue px-4 py-3 text-sm font-semibold text-white shadow-lg transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-orange focus-visible:ring-offset-2"
+        >
+          <Bot className="h-5 w-5" />
+          <span className="hidden sm:inline">Ask Steve</span>
+        </button>
       </div>
       <StaffGuide request={activeGuide} onClose={() => setActiveGuide(null)} />
       <BugReportDialog open={bugReportOpen} onClose={() => setBugReportOpen(false)} />

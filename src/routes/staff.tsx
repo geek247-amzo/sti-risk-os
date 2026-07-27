@@ -18,6 +18,7 @@ import {
   ShieldCheck,
   QrCode,
   Loader2,
+  Maximize2,
   X,
   Menu,
   Mic,
@@ -519,25 +520,52 @@ function StaffLayout() {
       </div>
       <div className="fixed bottom-5 right-5 z-40 flex flex-col items-end gap-3">
         {steveWidgetOpen && (
-          <div className="w-72 rounded-xl border border-border/70 bg-white p-4 shadow-2xl">
-            <div className="flex items-start gap-3">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-blue text-white">
+          <div
+            role="dialog"
+            aria-label="Ask Steve"
+            className="flex h-[min(34rem,calc(100vh-7rem))] w-[min(24rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+          >
+            <div className="flex items-center gap-3 bg-brand-blue px-4 py-3 text-white">
+              <div className="grid h-9 w-9 place-items-center rounded-full bg-white/15">
                 <Bot className="h-5 w-5" />
               </div>
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="font-semibold">Ask Steve</div>
-                <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  Ask questions across your authorised STI Risk context, quotes, work, and reports.
-                </p>
+                <div className="flex items-center gap-1.5 text-[11px] text-white/75">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" /> Authorised staff context
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSteveWidgetOpen(false)}
+                className="grid h-8 w-8 place-items-center rounded-md text-white/75 hover:bg-white/10 hover:text-white"
+                aria-label="Close Ask Steve"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="flex flex-1 flex-col justify-end gap-3 overflow-y-auto bg-slate-50 p-4">
+              <div className="flex items-end gap-2">
+                <div className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-brand-blue/10 text-brand-blue">
+                  <Bot className="h-4 w-4" />
+                </div>
+                <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-slate-200 bg-white px-3 py-2.5 text-sm leading-5 text-slate-700 shadow-sm">
+                  Ask me about clients, quotes, projects, field work, reports, or calls.
+                </div>
+              </div>
+              <div className="rounded-xl border border-brand-blue/15 bg-brand-blue/5 p-3 text-xs leading-5 text-slate-600">
+                Open the full chat when you need conversation history, file uploads, linked records, or longer answers.
               </div>
             </div>
-            <Link
-              to="/staff/chat"
-              onClick={() => setSteveWidgetOpen(false)}
-              className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md bg-brand-orange px-3 py-2 text-sm font-semibold text-primary-foreground hover:brightness-110"
-            >
-              <MessageSquare className="h-4 w-4" /> Open Steve Chat
-            </Link>
+            <div className="border-t border-slate-200 bg-white p-3">
+              <Link
+                to="/staff/chat"
+                onClick={() => setSteveWidgetOpen(false)}
+                className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-brand-orange px-3 py-2.5 text-sm font-semibold text-primary-foreground hover:brightness-110"
+              >
+                <Maximize2 className="h-4 w-4" /> Maximise Steve Chat
+              </Link>
+            </div>
           </div>
         )}
         <button

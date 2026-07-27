@@ -71,7 +71,8 @@ function Compliance() {
     event.preventDefault();
     setError("");
     setNotice("");
-    const body = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const form = event.currentTarget;
+    const body = Object.fromEntries(new FormData(form).entries());
     try {
       const response = await fetch("/api/site-visits", {
         method: "POST",
@@ -80,7 +81,7 @@ function Compliance() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error ?? "Unable to create site visit");
-      event.currentTarget.reset();
+      form.reset();
       setVisitOrganizationId("");
       setVisitSiteId("");
       setNotice("Site visit created. It is now available in the assessment selector.");
@@ -101,7 +102,8 @@ function Compliance() {
     event.preventDefault();
     setError("");
     setNotice("");
-    const body = Object.fromEntries(new FormData(event.currentTarget).entries());
+    const form = event.currentTarget;
+    const body = Object.fromEntries(new FormData(form).entries());
     try {
       const r = await fetch("/api/compliance-records", {
         method: "POST",
@@ -110,7 +112,7 @@ function Compliance() {
       });
       const b = await r.json();
       if (!r.ok) throw new Error(b.error);
-      event.currentTarget.reset();
+      form.reset();
       setAreaId("");
       setNotice("Compliance assessment recorded; history preserved.");
       await load();

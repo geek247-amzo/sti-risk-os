@@ -37,6 +37,7 @@ type Project = {
 type PipelineDeal = {
   id: string;
   title: string;
+  organizationId?: string | null;
   organizationName: string | null;
   valueCents: number;
   currency: string;
@@ -44,6 +45,11 @@ type PipelineDeal = {
 
 type PipelineStage = {
   deals: PipelineDeal[];
+};
+
+type ClientOption = {
+  id: string;
+  name: string;
 };
 
 const statusOptions = ["planned", "active", "on_hold", "completed", "cancelled"];
@@ -84,6 +90,7 @@ function priorityClass(priority: string) {
 function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [pipelineDeals, setPipelineDeals] = useState<PipelineDeal[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [loading, setLoading] = useState(true);
@@ -102,11 +109,14 @@ function Projects() {
         fetch("/api/projects"),
         fetch("/api/crm/pipeline"),
       ]);
+      const clientsResponse = await fetch("/api/clients");
       const projectsBody = await projectsResponse.json();
       const pipelineBody = await pipelineResponse.json();
+      const clientsBody = clientsResponse.ok ? await clientsResponse.json() : {};
       if (!projectsResponse.ok) throw new Error(projectsBody.error ?? "Projects failed to load");
       if (!pipelineResponse.ok) throw new Error(pipelineBody.error ?? "Deals failed to load");
       setProjects(projectsBody.projects ?? []);
+      setClients(clientsBody.clients ?? []);
       setPipelineDeals(
         (pipelineBody.stages ?? []).flatMap((stage: PipelineStage) => stage.deals ?? []),
       );
@@ -173,6 +183,7 @@ function Projects() {
         body: JSON.stringify({
           name: projectName,
           dealId: selectedDealId || null,
+          organizationId: formData.get("organizationId") || selectedDeal?.organizationId || null,
           status: formData.get("status"),
           priority: formData.get("priority"),
           budget: formData.get("budget"),
@@ -390,6 +401,21 @@ function Projects() {
                 {pipelineDeals.map((deal) => (
                   <option key={deal.id} value={deal.id}>
                     {deal.title} {deal.organizationName ? `- ${deal.organizationName}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-xs font-medium text-muted-foreground">Client</span>
+              <select
+                name="organizationId"
+                defaultValue=""
+                className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
+              >
+                <option value="">Select a client</option>
+                {clients.map((client) => (
+                  <option key={client.id} value={client.id}>
+                    {client.name}
                   </option>
                 ))}
               </select>

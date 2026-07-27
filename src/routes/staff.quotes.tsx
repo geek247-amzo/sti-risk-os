@@ -24,6 +24,7 @@ type Quote = {
   margin_cents: number;
   margin_percent: string | number;
   valid_until: string | null;
+  sent_at: string | null;
   organization_name: string;
   site_name: string;
   created_by_name: string | null;
@@ -52,6 +53,15 @@ const statuses = [
   "rejected",
 ];
 
+const quoteStages = [
+  { value: "draft", label: "Draft" },
+  { value: "pending_technical_review", label: "Technical review" },
+  { value: "approved_internal", label: "Approved" },
+  { value: "sent_to_client", label: "Sent to client" },
+  { value: "accepted", label: "Accepted" },
+  { value: "rejected", label: "Rejected" },
+] as const;
+
 function money(cents: number, currency = "ZAR") {
   return new Intl.NumberFormat("en-ZA", {
     style: "currency",
@@ -61,7 +71,7 @@ function money(cents: number, currency = "ZAR") {
 }
 
 function statusLabel(status: string) {
-  return status.replaceAll("_", " ");
+  return status.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function statusClass(status: string) {
@@ -149,6 +159,15 @@ function Quotes() {
     [quotes],
   );
 
+  const stageCounts = useMemo(
+    () =>
+      quoteStages.map((stage) => ({
+        ...stage,
+        count: quotes.filter((quote) => quote.status === stage.value).length,
+      })),
+    [quotes],
+  );
+
   if (pathname !== "/staff/quotes") return <Outlet />;
 
   return (
@@ -219,6 +238,37 @@ function Quotes() {
         <div className="rounded-lg border border-border/60 bg-white p-5">
           <div className="text-xs uppercase tracking-wider text-muted-foreground">Gross Margin</div>
           <div className="mt-2 text-2xl font-bold">{money(stats.margin)}</div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-border/60 bg-surface p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="text-xs uppercase tracking-wider text-muted-foreground">
+              Quote pipeline
+            </div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              See where every quote is in the journey from draft to client decision.
+            </div>
+          </div>
+          <div className="text-xs text-muted-foreground">{quotes.length} total</div>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          {stageCounts.map((stage) => (
+            <button
+              key={stage.value}
+              type="button"
+              onClick={() => setStatusFilter(stage.value)}
+              className={`rounded-md border p-3 text-left transition hover:border-brand-orange ${
+                statusFilter === stage.value
+                  ? "border-brand-orange bg-brand-orange/5"
+                  : "border-border bg-background"
+              }`}
+            >
+              <div className="text-xs text-muted-foreground">{stage.label}</div>
+              <div className="mt-1 text-xl font-bold">{stage.count}</div>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -307,6 +357,11 @@ function Quotes() {
                   </div>
                   <div className="mt-1 text-sm text-muted-foreground">
                     {quote.organization_name} · {quote.site_name}
+                  </div>
+                  <div className="mt-2 text-xs text-muted-foreground">
+                    {quote.sent_at
+                      ? `Sent ${new Date(quote.sent_at).toLocaleDateString("en-ZA")}`
+                      : `Updated ${new Date(quote.updated_at).toLocaleDateString("en-ZA")}`}
                   </div>
                   <div className={`mt-1 text-xs ${validationClass(quote.validation_status)}`}>
                     {quote.validation_status ? (

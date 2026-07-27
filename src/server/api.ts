@@ -8298,7 +8298,7 @@ async function quotes(request: Request) {
       ORDER BY quote_id, created_at DESC
     )
     SELECT q.id, q.quote_number, q.status, q.currency, q.total_value_cents,
-      q.total_cost_cents, q.margin_cents, q.margin_percent, q.valid_until,
+      q.total_cost_cents, q.margin_cents, q.margin_percent, q.valid_until, q.sent_at,
       q.created_at, q.updated_at, o.name AS organization_name, s.name AS site_name,
       u.name AS created_by_name, lv.status AS validation_status,
       lv.summary AS validation_summary, lv.created_at AS validation_at

@@ -11905,6 +11905,7 @@ async function chatContextSummary(user: User) {
     tasks,
     deals,
     contacts,
+    sites,
     projects,
     growthCampaigns,
     growthRecommendations,
@@ -11953,6 +11954,13 @@ async function chatContextSummary(user: User) {
       LEFT JOIN app_users u ON u.id = c.owner_id
       ORDER BY c.updated_at DESC
       LIMIT 8
+    `),
+    getPool().query(`
+      SELECT s.id, s.organization_id, s.name, s.address, o.name AS organization_name
+      FROM sites s
+      JOIN organizations o ON o.id = s.organization_id
+      ORDER BY s.updated_at DESC NULLS LAST, s.name
+      LIMIT 500
     `),
     getPool().query(`
       SELECT p.id, p.name, p.status, p.priority, p.due_on, p.budget_cents,
@@ -12014,6 +12022,7 @@ async function chatContextSummary(user: User) {
     `Priority tasks: ${JSON.stringify(tasks.rows)}`,
     `Open deals: ${JSON.stringify(deals.rows)}`,
     `Recent contacts: ${JSON.stringify(contacts.rows)}`,
+    `Customer sites available for site visits: ${JSON.stringify(sites.rows)}`,
     `Projects: ${JSON.stringify(projects.rows)}`,
     `Growth campaigns: ${JSON.stringify(growthCampaigns.rows)}`,
     `Growth recommendations: ${JSON.stringify(growthRecommendations.rows)}`,

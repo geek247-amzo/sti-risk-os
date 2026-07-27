@@ -94,6 +94,8 @@ E4 intentionally does not add fuzzy matching, supervisor reassignment, customer-
 
 ## Stream F — Inspection closeout and verification
 
+**Site visit creation refinement:** `/staff/compliance` now provides a staff-facing Create site visit form. It creates the required operational container automatically when one does not already exist, and the new visit immediately becomes available in the assessment selector. Steve's authenticated staff-agent action path also supports `create_site_visit` with the same organization/site validation and audit trail. No new schema was required.
+
 - F1 — **complete**, commit `15fd893`. Browser print/save PDF export with print-specific styling.
 - F2 — **complete**, commit `dd49dab`. Public `/sign/$token` includes full findings, remediation, comments, outcomes, risk levels, SANS clauses, and secure token-scoped evidence URLs. Existing sign-off is reused.
 - F3 — **deferred**. Final repository, migration, deployment, and live verification after Streams A–E close.

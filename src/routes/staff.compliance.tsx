@@ -20,6 +20,8 @@ type Visit = {
   site_name: string;
   organization_name: string;
 };
+type Organization = { id: string; name: string };
+type Site = { id: string; organization_id: string; name: string; address: string | null };
 type RecordRow = {
   id: string;
   status: "green" | "red" | "yellow";
@@ -39,8 +41,12 @@ function Compliance() {
   const [areas, setAreas] = useState<Area[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
   const [visits, setVisits] = useState<Visit[]>([]);
+  const [organizations, setOrganizations] = useState<Organization[]>([]);
+  const [sites, setSites] = useState<Site[]>([]);
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [areaId, setAreaId] = useState("");
+  const [visitOrganizationId, setVisitOrganizationId] = useState("");
+  const [visitSiteId, setVisitSiteId] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   async function load() {
@@ -51,10 +57,37 @@ function Compliance() {
     const cb = await c.json();
     const rb = await r.json();
     if (!c.ok || !r.ok) throw new Error(cb.error ?? rb.error ?? "Unable to load compliance");
+    setOrganizations(cb.organizations ?? []);
+    setSites(cb.sites ?? []);
     setAreas(cb.areas ?? []);
     setAssets(cb.assets ?? []);
     setVisits(cb.visits ?? []);
     setRecords(rb.records ?? []);
+  }
+
+  const visitSites = sites.filter((site) => site.organization_id === visitOrganizationId);
+
+  async function createSiteVisit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    const body = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try {
+      const response = await fetch("/api/site-visits", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error ?? "Unable to create site visit");
+      event.currentTarget.reset();
+      setVisitOrganizationId("");
+      setVisitSiteId("");
+      setNotice("Site visit created. It is now available in the assessment selector.");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to create site visit");
+    }
   }
   useEffect(() => {
     load().catch((e) => setError(e instanceof Error ? e.message : "Unable to load compliance"));
@@ -117,6 +150,65 @@ function Compliance() {
           {notice}
         </div>
       )}
+      <form
+        onSubmit={createSiteVisit}
+        className="grid gap-3 rounded-xl border border-border/60 bg-surface p-5 shadow-sm md:grid-cols-2"
+      >
+        <div className="md:col-span-2">
+          <h2 className="font-semibold">Create site visit</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Create the visit first; it will then appear below for compliance assessment. The platform
+            creates the required operational container automatically.
+          </p>
+        </div>
+        <select
+          name="organizationId"
+          required
+          value={visitOrganizationId}
+          onChange={(event) => {
+            setVisitOrganizationId(event.target.value);
+            setVisitSiteId("");
+          }}
+          className={input}
+        >
+          <option value="">Select customer</option>
+          {organizations.map((organization) => (
+            <option key={organization.id} value={organization.id}>
+              {organization.name}
+            </option>
+          ))}
+        </select>
+        <select
+          name="siteId"
+          required
+          value={visitSiteId}
+          onChange={(event) => setVisitSiteId(event.target.value)}
+          className={input}
+        >
+          <option value="">Select site</option>
+          {visitSites.map((site) => (
+            <option key={site.id} value={site.id}>
+              {site.name}
+            </option>
+          ))}
+        </select>
+        <select name="visitType" className={input} defaultValue="maintenance">
+          <option value="maintenance">Maintenance</option>
+          <option value="project">Project</option>
+        </select>
+        <select name="captureMode" required className={input} defaultValue="technician_submitted">
+          <option value="technician_submitted">Technician submitted</option>
+          <option value="client_self_service_submitted">Client self-service</option>
+        </select>
+        <textarea
+          name="notes"
+          placeholder="Visit notes (optional)"
+          className="min-h-20 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand-orange md:col-span-2"
+        />
+        <button className="inline-flex h-10 items-center justify-center rounded-md bg-brand-blue px-4 text-sm font-semibold text-white md:col-span-2">
+          Create site visit
+        </button>
+      </form>
       <form
         onSubmit={create}
         className="grid gap-3 rounded-xl border border-border/60 bg-surface p-5 shadow-sm md:grid-cols-2"

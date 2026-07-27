@@ -5911,7 +5911,11 @@ async function jobCards(request: Request) {
 async function complianceContext(request: Request) {
   const auth = await requireUser(request, ["admin", "staff"]);
   if (auth.response) return auth.response;
-  const [visits, areas, assets] = await Promise.all([
+  const [organizations, sites, visits, areas, assets] = await Promise.all([
+    getPool().query("SELECT id, name FROM organizations ORDER BY name LIMIT 500"),
+    getPool().query(
+      "SELECT id, organization_id, name, address FROM sites ORDER BY name LIMIT 1000",
+    ),
     getPool().query(
       `SELECT sv.id, sv.site_id, sv.started_at, sv.status, s.name AS site_name, o.name AS organization_name FROM site_visits sv JOIN sites s ON s.id = sv.site_id JOIN organizations o ON o.id = sv.organization_id ORDER BY sv.started_at DESC LIMIT 200`,
     ),
@@ -5922,7 +5926,13 @@ async function complianceContext(request: Request) {
       `SELECT a.id, a.area_id, a.site_id, a.name, a.asset_type, ar.name AS area_name FROM assets a LEFT JOIN areas ar ON ar.id = a.area_id ORDER BY a.name`,
     ),
   ]);
-  return json({ visits: visits.rows, areas: areas.rows, assets: assets.rows });
+  return json({
+    organizations: organizations.rows,
+    sites: sites.rows,
+    visits: visits.rows,
+    areas: areas.rows,
+    assets: assets.rows,
+  });
 }
 
 async function complianceRecords(request: Request) {
@@ -6015,6 +6025,113 @@ function requestOriginMetadata(request: Request) {
   };
 }
 
+async function createSiteVisitRecord(
+  client: pg.PoolClient,
+  actor: User,
+  body: Record<string, unknown>,
+  source: string,
+) {
+  const organizationId = requireText(body.organizationId ?? body.organization_id, "Organization");
+  const siteId = requireText(body.siteId ?? body.site_id, "Site");
+  const captureMode = requireOneOf(body.captureMode ?? body.capture_mode, "Capture mode", [
+    "technician_submitted",
+    "client_self_service_submitted",
+  ] as const);
+  const visitType = body.visitType ?? body.visit_type;
+  if (visitType !== undefined && visitType !== null && visitType !== "")
+    requireOneOf(visitType, "Visit type", ["maintenance", "project"] as const);
+
+  const projectId = optionalText(body.projectId ?? body.project_id);
+  const workItemId = optionalText(body.workItemId ?? body.work_item_id);
+  const requestedContainerId = optionalText(body.containerId ?? body.container_id);
+  const context = await client.query(
+    `SELECT o.id AS organization_id, s.id AS site_id
+     FROM organizations o JOIN sites s ON s.organization_id = o.id
+     WHERE o.id = $1 AND s.id = $2`,
+    [organizationId, siteId],
+  );
+  if (!context.rows[0])
+    throw new Error("Organization and site context is invalid");
+
+  let containerId = requestedContainerId;
+  let projectName: string | null = null;
+  if (projectId) {
+    const project = await client.query(
+      `SELECT id, name, container_id FROM projects
+       WHERE id = $1 AND organization_id = $2 AND (site_id IS NULL OR site_id = $3)`,
+      [projectId, organizationId, siteId],
+    );
+    if (!project.rows[0]) throw new Error("Project does not belong to this organization/site");
+    projectName = project.rows[0].name;
+    containerId = containerId ?? project.rows[0].container_id;
+  }
+  if (workItemId) {
+    const workItem = await client.query(
+      "SELECT id FROM work_items WHERE id = $1 AND organization_id = $2",
+      [workItemId, organizationId],
+    );
+    if (!workItem.rows[0]) throw new Error("Work item does not belong to this organization");
+  }
+  const clientPoId = optionalText(body.clientPoId ?? body.client_po_id);
+  if (clientPoId) {
+    const po = await client.query(
+      "SELECT id FROM client_pos WHERE id = $1 AND organization_id = $2",
+      [clientPoId, organizationId],
+    );
+    if (!po.rows[0]) throw new Error("Client PO does not belong to this organization");
+  }
+
+  if (containerId) {
+    const container = await client.query(
+      "SELECT id FROM containers WHERE id = $1 AND organization_id = $2 AND status <> 'archived'",
+      [containerId, organizationId],
+    );
+    if (!container.rows[0]) throw new Error("Container does not belong to this organization");
+  } else {
+    const containerName = projectName ? `Project: ${projectName}` : "General site visits";
+    const container = await client.query(
+      `INSERT INTO containers (organization_id, name, created_by)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (organization_id, name) DO UPDATE SET status = 'active', updated_at = now()
+       RETURNING id`,
+      [organizationId, containerName, actor.id],
+    );
+    containerId = container.rows[0].id;
+    if (projectId) {
+      await client.query(
+        "UPDATE projects SET container_id = COALESCE(container_id, $2), updated_at = now() WHERE id = $1",
+        [projectId, containerId],
+      );
+    }
+  }
+
+  const result = await client.query(
+    `INSERT INTO site_visits (
+      organization_id, container_id, project_id, site_id, building_id, floor_id, area_id,
+      capture_mode, visit_type, client_po_id, work_item_id, submitted_by_user_id, notes, metadata
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
+    RETURNING *`,
+    [
+      organizationId,
+      containerId,
+      projectId,
+      siteId,
+      optionalText(body.buildingId ?? body.building_id),
+      optionalText(body.floorId ?? body.floor_id),
+      optionalText(body.areaId ?? body.area_id),
+      captureMode,
+      optionalText(visitType),
+      clientPoId,
+      workItemId,
+      actor.id,
+      optionalText(body.notes),
+      JSON.stringify({ ...(body.metadata && typeof body.metadata === "object" ? body.metadata : {}), source }),
+    ],
+  );
+  await audit(client, "create_site_visit", "site_visit", result.rows[0].id, { source, visitType }, actor);
+  return result.rows[0];
+}
+
 async function siteVisits(request: Request) {
   const auth = await requireUser(request, ["admin", "staff"]);
   if (auth.response) return auth.response;
@@ -6034,87 +6151,20 @@ async function siteVisits(request: Request) {
     return json({ siteVisits: result.rows });
   }
   const body = asRecord(await readJson(request));
-  const organizationId = requireText(body.organizationId ?? body.organization_id, "Organization");
-  const containerId = requireText(body.containerId ?? body.container_id, "Container");
-  const siteId = requireText(body.siteId ?? body.site_id, "Site");
-  const captureMode = requireOneOf(body.captureMode ?? body.capture_mode, "Capture mode", [
-    "technician_submitted",
-    "client_self_service_submitted",
-  ] as const);
-  const visitType = body.visitType ?? body.visit_type;
-  if (visitType !== undefined && visitType !== null && visitType !== "")
-    requireOneOf(visitType, "Visit type", ["maintenance", "project"] as const);
-  const context = await getPool().query(
-    `SELECT o.id AS organization_id, c.id AS container_id, s.id AS site_id
-     FROM organizations o CROSS JOIN containers c CROSS JOIN sites s
-     WHERE o.id = $1 AND c.id = $2 AND c.organization_id = o.id
-       AND s.id = $3 AND s.organization_id = o.id`,
-    [organizationId, containerId, siteId],
-  );
-  if (!context.rows[0])
-    return json({ error: "Organization, container, or site context is invalid" }, { status: 400 });
-  const projectId = optionalText(body.projectId ?? body.project_id);
-  const clientPoId = optionalText(body.clientPoId ?? body.client_po_id);
-  const workItemId = optionalText(body.workItemId ?? body.work_item_id);
-  if (projectId) {
-    const project = await getPool().query(
-      "SELECT id FROM projects WHERE id = $1 AND organization_id = $2 AND container_id = $3",
-      [projectId, organizationId, containerId],
-    );
-    if (!project.rows[0])
-      return json(
-        { error: "Project does not belong to this organization/container" },
-        { status: 400 },
-      );
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const siteVisit = await createSiteVisitRecord(client, auth.user, body, "staff");
+    await client.query("COMMIT");
+    return json({ ok: true, siteVisit }, { status: 201 });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    const response = responseFromError(error);
+    if (response) return response;
+    return json({ error: error instanceof Error ? error.message : "Unable to create site visit" }, { status: 400 });
+  } finally {
+    client.release();
   }
-  if (clientPoId) {
-    const po = await getPool().query(
-      "SELECT id FROM client_pos WHERE id = $1 AND organization_id = $2",
-      [clientPoId, organizationId],
-    );
-    if (!po.rows[0])
-      return json({ error: "Client PO does not belong to this organization" }, { status: 400 });
-  }
-  if (workItemId) {
-    const workItem = await getPool().query(
-      "SELECT id FROM work_items WHERE id = $1 AND organization_id = $2",
-      [workItemId, organizationId],
-    );
-    if (!workItem.rows[0])
-      return json({ error: "Work item does not belong to this organization" }, { status: 400 });
-  }
-  const result = await getPool().query(
-    `INSERT INTO site_visits (
-      organization_id, container_id, project_id, site_id, building_id, floor_id, area_id,
-      capture_mode, visit_type, client_po_id, work_item_id, submitted_by_user_id, notes, metadata
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
-    RETURNING *`,
-    [
-      organizationId,
-      containerId,
-      projectId,
-      siteId,
-      optionalText(body.buildingId ?? body.building_id),
-      optionalText(body.floorId ?? body.floor_id),
-      optionalText(body.areaId ?? body.area_id),
-      captureMode,
-      optionalText(visitType),
-      clientPoId,
-      workItemId,
-      auth.user.id,
-      optionalText(body.notes),
-      JSON.stringify(body.metadata && typeof body.metadata === "object" ? body.metadata : {}),
-    ],
-  );
-  await audit(
-    getPool(),
-    "create_site_visit",
-    "site_visit",
-    result.rows[0].id,
-    { visitType, captureMode },
-    auth.user,
-  );
-  return json({ ok: true, siteVisit: result.rows[0] }, { status: 201 });
 }
 
 async function projectQrManagement(request: Request, projectId: string) {
@@ -12585,6 +12635,7 @@ async function internalStaffAgentContext(request: Request) {
     allowedActions: [
       "create_recommendation",
       "create_task",
+      "create_site_visit",
       "create_quote_template",
       "add_task_comment",
       "log_communication",
@@ -12597,7 +12648,7 @@ async function internalStaffAgentContext(request: Request) {
       "create_microsoft_email_draft",
     ],
     policy:
-      "Direct writes are limited to internal tasks, quote templates, comments, communication notes, and Microsoft Outlook draft creation for the signed-in user. Deal, contact, project, and growth changes must be approval recommendations. Microsoft email may be drafted but not sent automatically.",
+      "Direct writes are limited to internal tasks, site visits, quote templates, comments, communication notes, and Microsoft Outlook draft creation for the signed-in user. Deal, contact, project, and growth changes must be approval recommendations. Microsoft email may be drafted but not sent automatically.",
   });
 }
 
@@ -12619,6 +12670,7 @@ async function internalStaffAgentActions(request: Request) {
     "read_microsoft_recent_emails",
     "read_microsoft_recent_docs",
     "create_microsoft_email_draft",
+    "create_site_visit",
   ] as const);
   const payload = asRecord(body.payload);
   const client = await getPool().connect();
@@ -12674,6 +12726,10 @@ async function internalStaffAgentActions(request: Request) {
         { graphMessageId: draft.id ?? null },
         user,
       );
+    } else if (action === "create_site_visit") {
+      const siteVisit = await createSiteVisitRecord(client, user, payload, "steve_chat");
+      response = { siteVisitId: siteVisit.id, siteVisit };
+      await audit(client, "steve_chat_create_site_visit", "site_visit", siteVisit.id, {}, user);
     } else if (action === "create_task") {
       const board = await ensureTaskBoard(client);
       const backlog = board.stages.find((stage) => stage.name === "Backlog") ?? board.stages[0];

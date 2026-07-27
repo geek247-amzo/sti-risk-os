@@ -86,9 +86,11 @@ E4 intentionally does not add fuzzy matching, supervisor reassignment, customer-
 
 - E5 — **complete and live**, follow-up to E4. `/staff/voice` is now linked in the staff sidebar by E9 and non-admin staff users see only calls assigned to their own extension; admins retain internal oversight access.
 - E6 — **complete and live**, follow-up to E4. The same Voice panel exposes each staff member’s unmatched-call tagging queue with customer linking and Personal actions. Tagging remains self-service and unauthorized reassignment returns 403.
-- E7 — **complete and live**, current implementation adds matched Yeastar call history and transcripts to the authenticated staff CRM contact detail page. It is staff-only and does not expose call data through customer-facing routes.
+- E7 — **complete and live**, current implementation adds matched Yeastar call history and transcripts to the authenticated staff CRM contact detail page. It is staff-only and does not expose call data through customer-facing routes. The Voice panel now also displays the normalized external number for each call, shows the mapped staff owner, and links matched calls directly to the customer profile for administrator/staff review.
 - E8 — **complete and live**, commit `30a8097`. Completed non-Personal Yeastar transcripts are indexed into the existing `embedding_documents`/Steve RAG pipeline as `yeastar_call` sources; Personal calls are excluded and any prior Personal documents are removed. Live verification indexed 19 transcript documents. Vector generation remains handled by the existing embedding worker through the normal pending-document flow.
 - E9 — **complete and live**, commit `44b5102`. Added Voice to the Operate staff navigation so `/staff/voice` is discoverable and receives the existing `data-guide="nav-voice"` target.
+
+**Voice-to-profile and Steve context refinement:** The existing Yeastar matcher normalizes South African phone-number variants and maps PBX extensions to staff users before applying only unambiguous customer matches. `/staff/voice` now exposes the normalized external number, staff ownership, and a direct customer-profile link for matched calls. Steve's authenticated context now includes recent authorized non-Personal calls and transcripts: administrators receive the internal call set, while non-admin staff receive only calls assigned to their own staff identity. Personal call content remains excluded from this context and from RAG.
 
 ## Stream F — Inspection closeout and verification
 

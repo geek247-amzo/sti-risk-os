@@ -191,7 +191,20 @@ async function yeastarCalls(request: Request) {
      ORDER BY c.last_name NULLS LAST, c.first_name NULLS LAST
      LIMIT 1000`,
   );
-  return json({ calls: rows.rows, contacts: contacts.rows });
+  return json({
+    calls: rows.rows.map((row) => ({
+      ...row,
+      external_number: normalizeYeastarPhone(
+        yeastarExternalNumber({
+          call_type: row.call_type,
+          call_from_number: row.call_from_number,
+          call_to_number: row.call_to_number,
+        }),
+      ),
+      customer_profile_href: row.contact_id ? `/staff/crm/contacts/${row.contact_id}` : null,
+    })),
+    contacts: contacts.rows,
+  });
 }
 
 async function yeastarTagCall(request: Request, callId: string) {
@@ -11847,6 +11860,7 @@ async function chatContextSummary(user: User) {
     growthRecommendations,
     recommendations,
     microsoft,
+    calls,
   ] = await Promise.all([
     getPool().query(`
       SELECT
@@ -11923,6 +11937,21 @@ async function chatContextSummary(user: User) {
       LIMIT 5
     `),
     microsoftAgentMemory(user),
+    getPool().query(
+      `SELECT yc.call_time, yc.call_type, yc.call_from_number, yc.call_to_number,
+              yc.disposition, yc.duration_seconds, yc.transcript, yc.tag_status,
+              su.name AS staff_name, c.first_name AS contact_first_name,
+              c.last_name AS contact_last_name, o.name AS organization_name
+       FROM yeastar_calls yc
+       LEFT JOIN app_users su ON su.id = yc.staff_user_id
+       LEFT JOIN contacts c ON c.id = yc.contact_id
+       LEFT JOIN organizations o ON o.id = yc.organization_id
+       WHERE ($1::text = 'admin' OR yc.staff_user_id = $2)
+         AND yc.tag_status <> 'personal'
+       ORDER BY yc.call_time DESC NULLS LAST
+       LIMIT 20`,
+      [user.role, user.id],
+    ),
   ]);
 
   return [
@@ -11939,6 +11968,7 @@ async function chatContextSummary(user: User) {
     `Growth campaigns: ${JSON.stringify(growthCampaigns.rows)}`,
     `Growth recommendations: ${JSON.stringify(growthRecommendations.rows)}`,
     `Pending recommendations: ${JSON.stringify(recommendations.rows)}`,
+    `Recent authorised voice calls and transcripts: ${JSON.stringify(calls.rows)}`,
   ].join("\n");
 }
 

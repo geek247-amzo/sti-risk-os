@@ -100,6 +100,9 @@ function Voice() {
                       {formatDate(call.call_time)} · {call.call_type ?? "Call"} ·{" "}
                       {call.disposition ?? "No disposition"}
                     </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      External number: <span className="font-medium text-foreground">{call.external_number ?? "Unknown"}</span>
+                    </p>
                   </div>
                 </div>
                 <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium">
@@ -130,7 +133,15 @@ function Voice() {
                   </span>
                 )}
                 {call.staff_name && (
-                  <span className="text-muted-foreground">· {call.staff_name}</span>
+                  <span className="text-muted-foreground">· Staff profile: {call.staff_name}</span>
+                )}
+                {call.customer_profile_href && (
+                  <a
+                    href={call.customer_profile_href}
+                    className="rounded-md border border-brand-blue/20 px-2 py-1 text-brand-blue hover:bg-brand-blue/5"
+                  >
+                    Open customer profile
+                  </a>
                 )}
                 {call.tag_status === "untagged" && call.can_tag && (
                   <>
@@ -204,6 +215,8 @@ type Call = {
   organization_name: string | null;
   tag_status: "untagged" | "matched" | "personal";
   can_tag: boolean;
+  external_number: string | null;
+  customer_profile_href: string | null;
 };
 
 type Contact = {

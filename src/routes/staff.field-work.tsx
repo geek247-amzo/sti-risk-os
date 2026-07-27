@@ -45,8 +45,24 @@ type Subcontractor = {
   compliance_status: string;
 };
 
+type ProjectOption = {
+  id: string;
+  name: string;
+  organization_id: string | null;
+  site_id: string | null;
+  site_name: string | null;
+};
+
+type ClientOption = { id: string; name: string };
+type StaffOption = { id: string; name: string; role: string };
+
 function FieldWork() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectOptions, setProjectOptions] = useState<ProjectOption[]>([]);
+  const [clients, setClients] = useState<ClientOption[]>([]);
+  const [sites, setSites] = useState<{ id: string; name: string }[]>([]);
+  const [staff, setStaff] = useState<StaffOption[]>([]);
+  const [selectedClientId, setSelectedClientId] = useState("");
   const [subcontractors, setSubcontractors] = useState<Subcontractor[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -58,24 +74,45 @@ function FieldWork() {
   const [cardParentId, setCardParentId] = useState("");
 
   async function load() {
-    const [jobsResponse, subcontractorsResponse] = await Promise.all([
+    const [jobsResponse, subcontractorsResponse, projectsResponse, clientsResponse, staffResponse] =
+      await Promise.all([
       fetch("/api/field/jobs"),
       fetch("/api/subcontractors"),
+      fetch("/api/projects"),
+      fetch("/api/clients"),
+      fetch("/api/staff/directory"),
     ]);
-    const [jobsBody, subcontractorsBody] = await Promise.all([
+    const [jobsBody, subcontractorsBody, projectsBody, clientsBody, staffBody] = await Promise.all([
       jobsResponse.json(),
       subcontractorsResponse.json(),
+      projectsResponse.json(),
+      clientsResponse.json(),
+      staffResponse.json(),
     ]);
     if (!jobsResponse.ok) throw new Error(jobsBody.error ?? "Field work failed to load");
     if (!subcontractorsResponse.ok)
       throw new Error(subcontractorsBody.error ?? "Subcontractors failed to load");
     setProjects(jobsBody.jobs ?? []);
     setSubcontractors(subcontractorsBody.subcontractors ?? []);
+    setProjectOptions(projectsBody.projects ?? []);
+    setClients(clientsBody.clients ?? []);
+    setStaff(staffBody.users ?? []);
   }
 
   useEffect(() => {
     load().catch((err) => setError(err instanceof Error ? err.message : "Field work failed"));
   }, []);
+
+  async function loadSites(clientId: string) {
+    if (!clientId) {
+      setSites([]);
+      return;
+    }
+    const response = await fetch(`/api/clients/${encodeURIComponent(clientId)}`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error ?? "Sites failed to load");
+    setSites(body.sites ?? []);
+  }
 
   async function createWorkItem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -313,8 +350,57 @@ function FieldWork() {
         <form
           data-guide="transaction-work-form"
           onSubmit={createWorkItem}
-          className="grid gap-3 rounded-lg border border-border/60 bg-surface p-4 md:grid-cols-[1fr_180px_160px_160px_auto]"
+          className="grid gap-3 rounded-lg border border-border/60 bg-surface p-4 md:grid-cols-2 xl:grid-cols-4"
         >
+          <select
+            name="organizationId"
+            required
+            defaultValue=""
+            onChange={(event) => {
+              setSelectedClientId(event.target.value);
+              setSites([]);
+              void loadSites(event.target.value);
+            }}
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
+          >
+            <option value="" disabled>
+              Select client
+            </option>
+            {clients.map((client) => (
+              <option key={client.id} value={client.id}>
+                {client.name}
+              </option>
+            ))}
+          </select>
+          <select
+            name="siteId"
+            required
+            defaultValue=""
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
+          >
+            <option value="" disabled>
+              Select site
+            </option>
+            {sites.map((site) => (
+              <option key={site.id} value={site.id}>
+                {site.name}
+              </option>
+            ))}
+          </select>
+          <select
+            name="projectId"
+            defaultValue=""
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
+          >
+            <option value="">No project linked</option>
+            {projectOptions
+              .filter((project) => !selectedClientId || project.organization_id === selectedClientId)
+              .map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name} · {project.site_name ?? "No site"}
+              </option>
+              ))}
+          </select>
           <input
             name="title"
             required
@@ -347,16 +433,40 @@ function FieldWork() {
             type="date"
             className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
           />
+          <select
+            name="ownerId"
+            defaultValue=""
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
+          >
+            <option value="">Assign to me</option>
+            {staff.map((member) => (
+              <option key={member.id} value={member.id}>
+                {member.name} · {member.role}
+              </option>
+            ))}
+          </select>
+          <select
+            name="subcontractorId"
+            defaultValue=""
+            className="h-10 rounded-md border border-border bg-background px-3 text-sm outline-none focus:border-brand-orange"
+          >
+            <option value="">No subcontractor assigned</option>
+            {subcontractors.map((subcontractor) => (
+              <option key={subcontractor.id} value={subcontractor.id}>
+                {subcontractor.name}
+              </option>
+            ))}
+          </select>
           <button
             data-guide="transaction-save-work"
-            className="h-10 rounded-md bg-brand-orange px-4 text-sm font-semibold text-primary-foreground"
+            className="h-10 rounded-md bg-brand-orange px-4 text-sm font-semibold text-primary-foreground xl:col-span-1"
           >
             Save
           </button>
           <textarea
             name="scope"
             placeholder="Scope"
-            className="min-h-20 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand-orange md:col-span-5"
+            className="min-h-20 rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:border-brand-orange md:col-span-2 xl:col-span-4"
           />
         </form>
       )}

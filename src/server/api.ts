@@ -4924,7 +4924,7 @@ async function projects(request: Request) {
 
   const rows = await getPool().query(`
     SELECT p.id, p.name, p.status, p.priority, p.budget_cents, p.currency, p.due_on,
-      p.site_id, o.name AS organization_name, s.name AS site_name,
+      p.organization_id, p.site_id, o.name AS organization_name, s.name AS site_name,
       d.id AS deal_id, d.title AS deal_title,
       count(DISTINCT de.id)::int AS deliverables,
       count(DISTINCT t.id) FILTER (WHERE t.status IN ('open', 'blocked'))::int AS active_tasks
@@ -5742,23 +5742,56 @@ async function fieldWork(request: Request) {
   if (request.method === "POST") {
     const body = await readJson(request);
     body.isTutorial = isTutorialRequest(request);
+    const organizationId = requireText(body.organizationId, "Client");
+    const siteId = requireText(body.siteId, "Site");
+    const projectId = optionalText(body.projectId);
+    const ownerId = optionalText(body.ownerId) ?? auth.user.id;
+    const subcontractorId = optionalText(body.subcontractorId);
+    const context = await getPool().query(
+      `SELECT s.id, s.organization_id
+       FROM sites s
+       WHERE s.id = $1 AND s.organization_id = $2`,
+      [siteId, organizationId],
+    );
+    if (!context.rows[0]) return json({ error: "Site does not belong to selected client" }, { status: 400 });
+    if (projectId) {
+      const project = await getPool().query(
+        `SELECT id FROM projects
+         WHERE id = $1 AND organization_id = $2 AND (site_id IS NULL OR site_id = $3)`,
+        [projectId, organizationId, siteId],
+      );
+      if (!project.rows[0]) return json({ error: "Project does not match selected client and site" }, { status: 400 });
+    }
+    const owner = await getPool().query(
+      `SELECT id FROM app_users WHERE id = $1 AND role IN ('admin', 'staff')`,
+      [ownerId],
+    );
+    if (!owner.rows[0]) return json({ error: "Assigned owner is not an active staff member" }, { status: 400 });
+    if (subcontractorId) {
+      const subcontractor = await getPool().query(
+        `SELECT id FROM subcontractors WHERE id = $1 AND status = 'active'`,
+        [subcontractorId],
+      );
+      if (!subcontractor.rows[0]) return json({ error: "Selected subcontractor is not active" }, { status: 400 });
+    }
     const result = await getPool().query(
       `INSERT INTO work_items (
         organization_id, site_id, building_id, area_id, asset_id, project_id, deal_id, quote_id,
-        owner_id, title, work_type, status, priority, scope, scheduled_for, is_tutorial
+        owner_id, subcontractor_id, title, work_type, status, priority, scope, scheduled_for, is_tutorial
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, 'service'), COALESCE($12, 'new'), COALESCE($13, 'medium'), $14, $15, $16)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12, 'service'), COALESCE($13, 'new'), COALESCE($14, 'medium'), $15, $16, $17)
        RETURNING id`,
       [
-        optionalText(body.organizationId),
-        optionalText(body.siteId),
+        organizationId,
+        siteId,
         optionalText(body.buildingId),
         optionalText(body.areaId),
         optionalText(body.assetId),
-        optionalText(body.projectId),
+        projectId,
         optionalText(body.dealId),
         optionalText(body.quoteId),
-        auth.user.id,
+        ownerId,
+        subcontractorId,
         requireText(body.title, "Work title"),
         optionalText(body.workType),
         optionalText(body.status),
@@ -5775,6 +5808,7 @@ async function fieldWork(request: Request) {
   const rows = await getPool().query(`
     SELECT wi.id, wi.title, wi.work_type, wi.status, wi.priority, wi.scope, wi.scheduled_for,
       o.name AS organization_name, s.name AS site_name, p.name AS project_name,
+      owner.name AS owner_name, sub.name AS subcontractor_name,
       count(DISTINCT fs.id)::int AS submissions,
       count(DISTINCT jc.id) FILTER (WHERE jc.status IN ('missing', 'uploaded'))::int AS job_cards_waiting,
       count(DISTINCT sr.id) FILTER (WHERE sr.status IN ('draft', 'pending_vusi_approval'))::int AS reports_waiting,
@@ -5786,11 +5820,13 @@ async function fieldWork(request: Request) {
     LEFT JOIN organizations o ON o.id = wi.organization_id
     LEFT JOIN sites s ON s.id = wi.site_id
     LEFT JOIN projects p ON p.id = wi.project_id
+    LEFT JOIN app_users owner ON owner.id = wi.owner_id
+    LEFT JOIN subcontractors sub ON sub.id = wi.subcontractor_id
     LEFT JOIN field_submissions fs ON fs.work_item_id = wi.id
     LEFT JOIN job_cards jc ON jc.work_item_id = wi.id
     LEFT JOIN service_reports sr ON sr.work_item_id = wi.id
     WHERE wi.is_tutorial = false
-    GROUP BY wi.id, o.name, s.name, p.name
+    GROUP BY wi.id, o.name, s.name, p.name, owner.name, sub.name
     ORDER BY wi.scheduled_for ASC NULLS LAST, wi.updated_at DESC
     LIMIT 200
   `);
@@ -10389,6 +10425,18 @@ async function settingsSummary(request: Request) {
     imports: imports.rows,
     users: users.rows,
   });
+}
+
+async function staffDirectory(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const result = await getPool().query(
+    `SELECT id, name, email, role
+     FROM app_users
+     WHERE role IN ('admin', 'staff')
+     ORDER BY name`,
+  );
+  return json({ users: result.rows });
 }
 
 async function fetchMessengerStatus() {
@@ -16106,6 +16154,8 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return whatsappApprovedUserDetail(request, whatsappApprovalMatch[1]);
     if (path === "/api/projects" && (request.method === "GET" || request.method === "POST"))
       return projects(request);
+    if (request.method === "GET" && path === "/api/staff/directory")
+      return staffDirectory(request);
     const testimonialReferralMatch = path.match(
       /^\/api\/projects\/([^/]+)\/testimonial-referral-trigger$/,
     );

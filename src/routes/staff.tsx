@@ -2,6 +2,7 @@ import { createFileRoute, Link, Outlet, useRouterState } from "@tanstack/react-r
 import { useEffect, useState, type FormEvent } from "react";
 import {
   Bot,
+  Camera,
   Building2,
   CalendarClock,
   CircleDollarSign,
@@ -44,6 +45,13 @@ const nav = [
     to: "/staff/vusi",
     label: "Vusi Workspace",
     icon: ClipboardCheck,
+    exact: true,
+    group: "Operate",
+  },
+  {
+    to: "/staff/vusi-tools",
+    label: "Vusi Tools",
+    icon: Camera,
     exact: true,
     group: "Operate",
   },

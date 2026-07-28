@@ -18,6 +18,7 @@ import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as StaffIndexRouteImport } from './routes/staff.index'
 import { Route as StaffWorkRouteImport } from './routes/staff.work'
+import { Route as StaffVusiToolsRouteImport } from './routes/staff.vusi-tools'
 import { Route as StaffVusiRouteImport } from './routes/staff.vusi'
 import { Route as StaffVoiceRouteImport } from './routes/staff.voice'
 import { Route as StaffSubcontractorsRouteImport } from './routes/staff.subcontractors'
@@ -103,6 +104,11 @@ const StaffIndexRoute = StaffIndexRouteImport.update({
 const StaffWorkRoute = StaffWorkRouteImport.update({
   id: '/work',
   path: '/work',
+  getParentRoute: () => StaffRoute,
+} as any)
+const StaffVusiToolsRoute = StaffVusiToolsRouteImport.update({
+  id: '/vusi-tools',
+  path: '/vusi-tools',
   getParentRoute: () => StaffRoute,
 } as any)
 const StaffVusiRoute = StaffVusiRouteImport.update({
@@ -353,6 +359,7 @@ export interface FileRoutesByFullPath {
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
   '/staff/vusi': typeof StaffVusiRoute
+  '/staff/vusi-tools': typeof StaffVusiToolsRoute
   '/staff/work': typeof StaffWorkRoute
   '/staff/': typeof StaffIndexRoute
   '/staff/crm/contacts': typeof StaffCrmContactsRouteWithChildren
@@ -404,6 +411,7 @@ export interface FileRoutesByTo {
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
   '/staff/vusi': typeof StaffVusiRoute
+  '/staff/vusi-tools': typeof StaffVusiToolsRoute
   '/staff/work': typeof StaffWorkRoute
   '/staff': typeof StaffIndexRoute
   '/staff/crm/contacts': typeof StaffCrmContactsRouteWithChildren
@@ -457,6 +465,7 @@ export interface FileRoutesById {
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
   '/staff/vusi': typeof StaffVusiRoute
+  '/staff/vusi-tools': typeof StaffVusiToolsRoute
   '/staff/work': typeof StaffWorkRoute
   '/staff/': typeof StaffIndexRoute
   '/staff/crm/contacts': typeof StaffCrmContactsRouteWithChildren
@@ -511,6 +520,7 @@ export interface FileRouteTypes {
     | '/staff/subcontractors'
     | '/staff/voice'
     | '/staff/vusi'
+    | '/staff/vusi-tools'
     | '/staff/work'
     | '/staff/'
     | '/staff/crm/contacts'
@@ -562,6 +572,7 @@ export interface FileRouteTypes {
     | '/staff/subcontractors'
     | '/staff/voice'
     | '/staff/vusi'
+    | '/staff/vusi-tools'
     | '/staff/work'
     | '/staff'
     | '/staff/crm/contacts'
@@ -614,6 +625,7 @@ export interface FileRouteTypes {
     | '/staff/subcontractors'
     | '/staff/voice'
     | '/staff/vusi'
+    | '/staff/vusi-tools'
     | '/staff/work'
     | '/staff/'
     | '/staff/crm/contacts'
@@ -702,6 +714,13 @@ declare module '@tanstack/react-router' {
       path: '/work'
       fullPath: '/staff/work'
       preLoaderRoute: typeof StaffWorkRouteImport
+      parentRoute: typeof StaffRoute
+    }
+    '/staff/vusi-tools': {
+      id: '/staff/vusi-tools'
+      path: '/vusi-tools'
+      fullPath: '/staff/vusi-tools'
+      preLoaderRoute: typeof StaffVusiToolsRouteImport
       parentRoute: typeof StaffRoute
     }
     '/staff/vusi': {
@@ -1091,6 +1110,7 @@ interface StaffRouteChildren {
   StaffSubcontractorsRoute: typeof StaffSubcontractorsRoute
   StaffVoiceRoute: typeof StaffVoiceRoute
   StaffVusiRoute: typeof StaffVusiRoute
+  StaffVusiToolsRoute: typeof StaffVusiToolsRoute
   StaffWorkRoute: typeof StaffWorkRoute
   StaffIndexRoute: typeof StaffIndexRoute
 }
@@ -1126,6 +1146,7 @@ const StaffRouteChildren: StaffRouteChildren = {
   StaffSubcontractorsRoute: StaffSubcontractorsRoute,
   StaffVoiceRoute: StaffVoiceRoute,
   StaffVusiRoute: StaffVusiRoute,
+  StaffVusiToolsRoute: StaffVusiToolsRoute,
   StaffWorkRoute: StaffWorkRoute,
   StaffIndexRoute: StaffIndexRoute,
 }

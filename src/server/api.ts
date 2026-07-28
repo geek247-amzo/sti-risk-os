@@ -9727,6 +9727,221 @@ async function checkDocumentationPhotoCompliance(
   }
 }
 
+type VusiScanScore = "met" | "not_met" | "unclear";
+
+async function scoreVusiChecklistItem(files: File[], item: Record<string, unknown>) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey)
+    return {
+      score: "unclear" as VusiScanScore,
+      rationale: "AI scan unavailable; GEMINI_API_KEY is not configured.",
+    };
+  const imageParts = await Promise.all(
+    files.map(async (file) => ({
+      inline_data: {
+        mime_type: file.type || "application/octet-stream",
+        data: Buffer.from(await file.arrayBuffer()).toString("base64"),
+      },
+    })),
+  );
+  const prompt = [
+    "You are performing a cautious, advisory visual scan for fire-safety gaps in South Africa.",
+    "Assess only what is visibly supported by the supplied image(s). Do not infer hidden conditions, certification, dimensions, or formal compliance.",
+    'Return JSON only in this shape: {"score":"met"|"not_met"|"unclear","rationale":"one or two plain-language sentences"}.',
+    `Requirement: ${item.requirement_description}`,
+    `What a visually compliant scene looks like: ${item.compliant_visual_criteria}`,
+    `Visual signs of a gap: ${item.noncompliant_visual_criteria}`,
+  ].join("\n\n");
+  try {
+    const model = process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash";
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: AbortSignal.timeout(35_000),
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [
+              {
+                text: "Be conservative. If the image is absent, blurry, incomplete or ambiguous, return unclear.",
+              },
+            ],
+          },
+          contents: [{ role: "user", parts: [{ text: prompt }, ...imageParts] }],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 240,
+            response_mime_type: "application/json",
+          },
+        }),
+      },
+    );
+    const body = asRecord(await response.json());
+    if (!response.ok) throw new Error("Gemini request failed");
+    const candidates = Array.isArray(body.candidates) ? body.candidates : [];
+    const content = asRecord(asRecord(candidates[0]).content);
+    const text = (Array.isArray(content.parts) ? content.parts : [])
+      .map((part) => optionalText(asRecord(part).text))
+      .filter(Boolean)
+      .join("\n");
+    const parsed = extractJsonObject(text);
+    const score = optionalText(parsed?.score);
+    const rationale = optionalText(parsed?.rationale);
+    if (!rationale || !["met", "not_met", "unclear"].includes(score ?? ""))
+      throw new Error("Invalid Gemini scan response");
+    return { score: score as VusiScanScore, rationale };
+  } catch {
+    return {
+      score: "unclear" as VusiScanScore,
+      rationale: "The image could not be assessed reliably; review this item on site.",
+    };
+  }
+}
+
+async function vusiToolsSansScan(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const pool = getPool();
+  if (request.method === "GET") {
+    const scans = await pool.query(
+      `SELECT s.id, s.setting, s.created_at, u.name AS performed_by,
+              count(r.id)::int AS result_count,
+              count(r.id) FILTER (WHERE r.score = 'not_met')::int AS not_met_count
+       FROM vusi_tools_scans s JOIN app_users u ON u.id = s.performed_by
+       LEFT JOIN vusi_tools_scan_results r ON r.scan_id = s.id
+       GROUP BY s.id, u.name ORDER BY s.created_at DESC LIMIT 25`,
+    );
+    const siteVisits = await pool.query(
+      `SELECT sv.id, sv.started_at, s.name AS site_name
+       FROM site_visits sv JOIN sites s ON s.id = sv.site_id
+       WHERE sv.status IN ('draft', 'in_progress', 'submitted')
+       ORDER BY sv.started_at DESC LIMIT 100`,
+    );
+    return json({
+      items: (
+        await pool.query(
+          "SELECT id, standard_code, setting, requirement_description, compliant_visual_criteria, noncompliant_visual_criteria, is_red_flag FROM vusi_tools_checklist_items WHERE active = true ORDER BY is_red_flag DESC, setting, standard_code",
+        )
+      ).rows,
+      scans: scans.rows,
+      siteVisits: siteVisits.rows,
+    });
+  }
+
+  const form = await request.formData();
+  const setting = optionalText(form.get("setting"));
+  if (!setting || !["shared", "industrial", "server_room", "corporate"].includes(setting))
+    return json({ error: "Choose a valid space setting" }, { status: 400 });
+  const files = [...form.getAll("files"), ...form.getAll("file")].filter(
+    (item): item is File => item instanceof File,
+  );
+  if (!files.length) return json({ error: "Attach at least one photo" }, { status: 400 });
+  if (files.length > 10) return json({ error: "Upload up to 10 photos per scan" }, { status: 400 });
+  if (files.some((file) => file.size > 20 * 1024 * 1024))
+    return json({ error: "Each photo must be 20MB or smaller" }, { status: 400 });
+  const siteVisitId = optionalText(form.get("siteVisitId"));
+  if (siteVisitId) {
+    const visit = await pool.query("SELECT id FROM site_visits WHERE id = $1", [siteVisitId]);
+    if (!visit.rows[0]) return json({ error: "Site visit not found" }, { status: 400 });
+  }
+  const uploadDir =
+    process.env.INSPECTION_UPLOAD_DIR || path.resolve(process.cwd(), "uploads/inspections");
+  await mkdir(uploadDir, { recursive: true });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const scan = (
+      await client.query(
+        "INSERT INTO vusi_tools_scans (site_visit_id, setting, performed_by) VALUES ($1, $2, $3) RETURNING id, setting, created_at",
+        [siteVisitId, setting, auth.user.id],
+      )
+    ).rows[0];
+    const evidenceIds: string[] = [];
+    for (const file of files) {
+      const id = crypto.randomUUID();
+      const extension = path
+        .extname(file.name)
+        .replace(/[^a-zA-Z0-9.]/g, "")
+        .slice(0, 12);
+      const storedPath = path.join(uploadDir, `${id}${extension}`);
+      await writeFile(storedPath, Buffer.from(await file.arrayBuffer()));
+      await client.query(
+        `INSERT INTO evidence_files (id, site_visit_id, uploaded_by, evidence_type, file_name, file_path, mime_type, metadata)
+         VALUES ($1, $2, $3, 'photo', $4, $5, $6, $7::jsonb)`,
+        [
+          id,
+          siteVisitId,
+          auth.user.id,
+          file.name,
+          storedPath,
+          file.type || "application/octet-stream",
+          JSON.stringify({
+            storage: "local_volume",
+            source: "vusi_tools_sans_scan",
+            scan_id: scan.id,
+          }),
+        ],
+      );
+      evidenceIds.push(id);
+    }
+    const items = (
+      await client.query(
+        `SELECT * FROM vusi_tools_checklist_items WHERE active = true AND setting IN ('shared', $1)
+       ORDER BY is_red_flag DESC, standard_code`,
+        [setting],
+      )
+    ).rows;
+    const results = [];
+    for (const item of items) {
+      const scored = await scoreVusiChecklistItem(files, item);
+      const result = (
+        await client.query(
+          `INSERT INTO vusi_tools_scan_results (scan_id, evidence_file_id, checklist_item_id, score, gemini_rationale)
+         VALUES ($1, $2, $3, $4, $5) RETURNING id, checklist_item_id, score, gemini_rationale`,
+          [scan.id, evidenceIds[0] ?? null, item.id, scored.score, scored.rationale],
+        )
+      ).rows[0];
+      results.push({
+        ...result,
+        standard_code: item.standard_code,
+        requirement_description: item.requirement_description,
+        is_red_flag: item.is_red_flag,
+      });
+    }
+    await client.query("COMMIT");
+    return json({ ok: true, scan: { ...scan, setting }, evidenceIds, results }, { status: 201 });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function vusiToolsEvidenceFile(request: Request, evidenceId: string) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const result = await getPool().query(
+    `SELECT ef.file_path, ef.mime_type FROM evidence_files ef
+     WHERE ef.id = $1 AND EXISTS (SELECT 1 FROM vusi_tools_scan_results r WHERE r.evidence_file_id = ef.id)`,
+    [evidenceId],
+  );
+  const row = result.rows[0];
+  if (!row?.file_path)
+    return json({ error: "Vusi Tools evidence file not found" }, { status: 404 });
+  try {
+    return new Response(await readFile(row.file_path as string), {
+      headers: {
+        "content-type": row.mime_type || "application/octet-stream",
+        "cache-control": "private, max-age=3600",
+      },
+    });
+  } catch {
+    return json({ error: "Evidence file is unavailable" }, { status: 404 });
+  }
+}
+
 async function structureInspectionComment(comment: string, context: string) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey)
@@ -16115,6 +16330,14 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
     if (request.method === "POST" && path === "/api/inspections") return createInspection(request);
     if (request.method === "GET" && path === "/api/inspection-capture/context")
       return inspectionCaptureContext(request);
+    if (
+      path === "/api/vusi-tools/sans-scan" &&
+      (request.method === "GET" || request.method === "POST")
+    )
+      return vusiToolsSansScan(request);
+    const vusiToolsEvidenceMatch = path.match(/^\/api\/vusi-tools\/evidence\/([^/]+)$/);
+    if (request.method === "GET" && vusiToolsEvidenceMatch?.[1])
+      return vusiToolsEvidenceFile(request, vusiToolsEvidenceMatch[1]);
     if (request.method === "GET" && path === "/api/inspections") return inspectionsList(request);
     if (
       path === "/api/consulting-stages" &&

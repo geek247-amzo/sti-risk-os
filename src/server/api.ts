@@ -2565,6 +2565,38 @@ function extractJsonObject(value: string) {
   }
 }
 
+function extractJsonArray(value: string) {
+  const trimmed = value.trim();
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  const candidate = fenced ?? trimmed;
+  try {
+    const parsed = JSON.parse(candidate);
+    return Array.isArray(parsed) ? parsed : Array.isArray(parsed?.findings) ? parsed.findings : null;
+  } catch {
+    const start = candidate.indexOf("[");
+    const end = candidate.lastIndexOf("]");
+    if (start >= 0 && end > start) {
+      try {
+        const parsed = JSON.parse(candidate.slice(start, end + 1));
+        return Array.isArray(parsed) ? parsed : null;
+      } catch {
+        return null;
+      }
+    }
+    const objectStart = candidate.indexOf("{");
+    const objectEnd = candidate.lastIndexOf("}");
+    if (objectStart >= 0 && objectEnd > objectStart) {
+      try {
+        const parsed = asRecord(JSON.parse(candidate.slice(objectStart, objectEnd + 1)));
+        return Array.isArray(parsed.findings) ? parsed.findings : null;
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  }
+}
+
 async function generateEmailDraftWithSteve(
   user: User,
   input: Record<string, unknown>,
@@ -9924,7 +9956,7 @@ async function vusiToolsEvidenceFile(request: Request, evidenceId: string) {
   if (auth.response) return auth.response;
   const result = await getPool().query(
     `SELECT ef.file_path, ef.mime_type FROM evidence_files ef
-     WHERE ef.id = $1 AND ef.metadata->>'source' = 'vusi_tools_sans_scan'`,
+     WHERE ef.id = $1 AND ef.metadata->>'source' IN ('vusi_tools_sans_scan', 'vusi_tools_image_report')`,
     [evidenceId],
   );
   const row = result.rows[0];
@@ -9939,6 +9971,206 @@ async function vusiToolsEvidenceFile(request: Request, evidenceId: string) {
     });
   } catch {
     return json({ error: "Evidence file is unavailable" }, { status: 404 });
+  }
+}
+
+type VusiImageFinding = {
+  description: string;
+  sansReference: string | null;
+  severity: "info" | "minor" | "moderate" | "critical";
+  rationale: string;
+};
+
+async function generateVusiImageFindings(file: File, locationNote?: string) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return [] as VusiImageFinding[];
+  const locationContext = locationNote
+    ? `Additional location context supplied by Vusi: ${locationNote}`
+    : "No additional location context was supplied.";
+  const prompt = [
+    "Review this single site photograph for visibly evident safety or SANS-relevant issues.",
+    "This is an advisory on-site aid, not a formal inspection, certification, engineering opinion, or determination of hidden conditions.",
+    "Flag only issues that are visibly evident in this image. Do not infer concealed defects, compliance status, dimensions, maintenance history, or certification.",
+    "Consider any visible fire, electrical, cable-management, structural, access, housekeeping, or other safety concern; do not limit the review to a fixed checklist.",
+    "If nothing notable is visibly evident, return an empty findings array.",
+    'Return JSON only in this shape: {"findings":[{"description":string,"sansReference":string|null,"severity":"info"|"minor"|"moderate"|"critical","rationale":string}]}',
+    "Use sansReference only when a clause can be identified confidently; otherwise use null.",
+    "Use critical only for an immediately serious visible life-safety or major fire/electrical hazard. Keep severity conservative.",
+    locationContext,
+  ].join("\n\n");
+  try {
+    const model = process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash";
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: AbortSignal.timeout(35_000),
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [
+              {
+                text: "Be conservative and plain-spoken. Never invent a clause number or a condition that is not visible.",
+              },
+            ],
+          },
+          contents: [
+            {
+              role: "user",
+              parts: [
+                { text: prompt },
+                {
+                  inline_data: {
+                    mime_type: file.type || "application/octet-stream",
+                    data: Buffer.from(await file.arrayBuffer()).toString("base64"),
+                  },
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 900,
+            response_mime_type: "application/json",
+          },
+        }),
+      },
+    );
+    const body = asRecord(await response.json());
+    if (!response.ok) return [] as VusiImageFinding[];
+    const candidates = Array.isArray(body.candidates) ? body.candidates : [];
+    const content = asRecord(asRecord(candidates[0]).content);
+    const text = (Array.isArray(content.parts) ? content.parts : [])
+      .map((part) => optionalText(asRecord(part).text))
+      .filter(Boolean)
+      .join("\n");
+    const parsed = extractJsonArray(text);
+    if (!parsed) return [] as VusiImageFinding[];
+    return parsed.flatMap((entry) => {
+      const finding = asRecord(entry);
+      const description = optionalText(finding.description);
+      const rationale = optionalText(finding.rationale);
+      const severity = optionalText(finding.severity);
+      if (
+        !description ||
+        !rationale ||
+        !["info", "minor", "moderate", "critical"].includes(severity ?? "")
+      )
+        return [];
+      return [
+        {
+          description,
+          sansReference: optionalText(finding.sansReference),
+          severity: severity as VusiImageFinding["severity"],
+          rationale,
+        },
+      ];
+    });
+  } catch {
+    return [] as VusiImageFinding[];
+  }
+}
+
+async function vusiToolsImageFindingsReport(request: Request) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const pool = getPool();
+  if (request.method === "GET") {
+    const reports = await pool.query(
+      `SELECT r.id, r.location_note, r.created_at, u.name AS performed_by,
+              ef.id AS evidence_file_id, ef.file_name,
+              count(f.id)::int AS finding_count
+       FROM vusi_tools_image_reports r
+       JOIN app_users u ON u.id = r.performed_by
+       JOIN evidence_files ef ON ef.id = r.evidence_file_id
+       LEFT JOIN vusi_tools_image_report_findings f ON f.report_id = r.id
+       GROUP BY r.id, u.name, ef.id, ef.file_name
+       ORDER BY r.created_at DESC LIMIT 25`,
+    );
+    const siteVisits = await pool.query(
+      `SELECT sv.id, sv.started_at, s.name AS site_name
+       FROM site_visits sv JOIN sites s ON s.id = sv.site_id
+       WHERE sv.status IN ('draft', 'in_progress', 'submitted')
+       ORDER BY sv.started_at DESC LIMIT 100`,
+    );
+    return json({ reports: reports.rows, siteVisits: siteVisits.rows });
+  }
+
+  const form = await request.formData();
+  const locationNote = optionalText(form.get("locationNote") ?? form.get("location_note"));
+  const siteVisitId = optionalText(form.get("siteVisitId") ?? form.get("site_visit_id"));
+  const files = [...form.getAll("files"), ...form.getAll("file")].filter(
+    (item): item is File => item instanceof File,
+  );
+  if (files.length !== 1)
+    return json({ error: "Attach exactly one image for an area findings report" }, { status: 400 });
+  const file = files[0];
+  if (!file.type.startsWith("image/")) return json({ error: "The report file must be an image" }, { status: 400 });
+  if (file.size > 20 * 1024 * 1024) return json({ error: "The image must be 20MB or smaller" }, { status: 400 });
+  if (siteVisitId) {
+    const visit = await pool.query("SELECT id FROM site_visits WHERE id = $1", [siteVisitId]);
+    if (!visit.rows[0]) return json({ error: "Site visit not found" }, { status: 400 });
+  }
+  const uploadDir =
+    process.env.INSPECTION_UPLOAD_DIR || path.resolve(process.cwd(), "uploads/inspections");
+  await mkdir(uploadDir, { recursive: true });
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const evidenceId = crypto.randomUUID();
+    const extension = path.extname(file.name).replace(/[^a-zA-Z0-9.]/g, "").slice(0, 12);
+    const storedPath = path.join(uploadDir, `${evidenceId}${extension}`);
+    await writeFile(storedPath, Buffer.from(await file.arrayBuffer()));
+    await client.query(
+      `INSERT INTO evidence_files (id, site_visit_id, uploaded_by, evidence_type, file_name, file_path, mime_type, metadata)
+       VALUES ($1, $2, $3, 'photo', $4, $5, $6, $7::jsonb)`,
+      [
+        evidenceId,
+        siteVisitId,
+        auth.user.id,
+        file.name,
+        storedPath,
+        file.type,
+        JSON.stringify({
+          storage: "local_volume",
+          source: "vusi_tools_image_report",
+        }),
+      ],
+    );
+    const report = (
+      await client.query(
+        `INSERT INTO vusi_tools_image_reports (evidence_file_id, site_visit_id, location_note, performed_by)
+         VALUES ($1, $2, $3, $4) RETURNING id, evidence_file_id, site_visit_id, location_note, created_at`,
+        [evidenceId, siteVisitId, locationNote, auth.user.id],
+      )
+    ).rows[0];
+    const findings = await generateVusiImageFindings(file, locationNote ?? undefined);
+    const savedFindings = [];
+    for (const finding of findings) {
+      const saved = (
+        await client.query(
+          `INSERT INTO vusi_tools_image_report_findings
+             (report_id, finding_description, sans_reference, severity, gemini_rationale)
+           VALUES ($1, $2, $3, $4, $5)
+           RETURNING id, finding_description, sans_reference, severity, gemini_rationale, created_at`,
+          [
+            report.id,
+            finding.description,
+            finding.sansReference,
+            finding.severity,
+            finding.rationale,
+          ],
+        )
+      ).rows[0];
+      savedFindings.push(saved);
+    }
+    await client.query("COMMIT");
+    return json({ ok: true, report, evidenceId, findings: savedFindings }, { status: 201 });
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
   }
 }
 
@@ -16335,6 +16567,11 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       (request.method === "GET" || request.method === "POST")
     )
       return vusiToolsSansScan(request);
+    if (
+      path === "/api/vusi-tools/findings-report" &&
+      (request.method === "GET" || request.method === "POST")
+    )
+      return vusiToolsImageFindingsReport(request);
     const vusiToolsEvidenceMatch = path.match(/^\/api\/vusi-tools\/evidence\/([^/]+)$/);
     if (request.method === "GET" && vusiToolsEvidenceMatch?.[1])
       return vusiToolsEvidenceFile(request, vusiToolsEvidenceMatch[1]);

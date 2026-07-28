@@ -51,6 +51,7 @@ import { Route as StaffAutomationsRouteImport } from './routes/staff.automations
 import { Route as StaffAssetsRiskRouteImport } from './routes/staff.assets-risk'
 import { Route as SignTokenRouteImport } from './routes/sign.$token'
 import { Route as ProjectScanTokenRouteImport } from './routes/project-scan.$token'
+import { Route as StaffVusiToolsFindingsReportRouteImport } from './routes/staff.vusi-tools.findings-report'
 import { Route as StaffQuotesOnsiteRouteImport } from './routes/staff.quotes.onsite'
 import { Route as StaffQuotesNewRouteImport } from './routes/staff.quotes.new'
 import { Route as StaffQuotesQuoteIdRouteImport } from './routes/staff.quotes.$quoteId'
@@ -271,6 +272,12 @@ const ProjectScanTokenRoute = ProjectScanTokenRouteImport.update({
   path: '/project-scan/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StaffVusiToolsFindingsReportRoute =
+  StaffVusiToolsFindingsReportRouteImport.update({
+    id: '/findings-report',
+    path: '/findings-report',
+    getParentRoute: () => StaffVusiToolsRoute,
+  } as any)
 const StaffQuotesOnsiteRoute = StaffQuotesOnsiteRouteImport.update({
   id: '/onsite',
   path: '/onsite',
@@ -359,7 +366,7 @@ export interface FileRoutesByFullPath {
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
   '/staff/vusi': typeof StaffVusiRoute
-  '/staff/vusi-tools': typeof StaffVusiToolsRoute
+  '/staff/vusi-tools': typeof StaffVusiToolsRouteWithChildren
   '/staff/work': typeof StaffWorkRoute
   '/staff/': typeof StaffIndexRoute
   '/staff/crm/contacts': typeof StaffCrmContactsRouteWithChildren
@@ -368,6 +375,7 @@ export interface FileRoutesByFullPath {
   '/staff/quotes/$quoteId': typeof StaffQuotesQuoteIdRoute
   '/staff/quotes/new': typeof StaffQuotesNewRoute
   '/staff/quotes/onsite': typeof StaffQuotesOnsiteRoute
+  '/staff/vusi-tools/findings-report': typeof StaffVusiToolsFindingsReportRoute
   '/staff/crm/contacts/$contactId': typeof StaffCrmContactsContactIdRoute
   '/staff/crm/deals/$dealId': typeof StaffCrmDealsDealIdRoute
   '/staff/growth/campaigns/$campaignId': typeof StaffGrowthCampaignsCampaignIdRoute
@@ -411,7 +419,7 @@ export interface FileRoutesByTo {
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
   '/staff/vusi': typeof StaffVusiRoute
-  '/staff/vusi-tools': typeof StaffVusiToolsRoute
+  '/staff/vusi-tools': typeof StaffVusiToolsRouteWithChildren
   '/staff/work': typeof StaffWorkRoute
   '/staff': typeof StaffIndexRoute
   '/staff/crm/contacts': typeof StaffCrmContactsRouteWithChildren
@@ -420,6 +428,7 @@ export interface FileRoutesByTo {
   '/staff/quotes/$quoteId': typeof StaffQuotesQuoteIdRoute
   '/staff/quotes/new': typeof StaffQuotesNewRoute
   '/staff/quotes/onsite': typeof StaffQuotesOnsiteRoute
+  '/staff/vusi-tools/findings-report': typeof StaffVusiToolsFindingsReportRoute
   '/staff/crm/contacts/$contactId': typeof StaffCrmContactsContactIdRoute
   '/staff/crm/deals/$dealId': typeof StaffCrmDealsDealIdRoute
   '/staff/growth/campaigns/$campaignId': typeof StaffGrowthCampaignsCampaignIdRoute
@@ -465,7 +474,7 @@ export interface FileRoutesById {
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
   '/staff/vusi': typeof StaffVusiRoute
-  '/staff/vusi-tools': typeof StaffVusiToolsRoute
+  '/staff/vusi-tools': typeof StaffVusiToolsRouteWithChildren
   '/staff/work': typeof StaffWorkRoute
   '/staff/': typeof StaffIndexRoute
   '/staff/crm/contacts': typeof StaffCrmContactsRouteWithChildren
@@ -474,6 +483,7 @@ export interface FileRoutesById {
   '/staff/quotes/$quoteId': typeof StaffQuotesQuoteIdRoute
   '/staff/quotes/new': typeof StaffQuotesNewRoute
   '/staff/quotes/onsite': typeof StaffQuotesOnsiteRoute
+  '/staff/vusi-tools/findings-report': typeof StaffVusiToolsFindingsReportRoute
   '/staff/crm/contacts/$contactId': typeof StaffCrmContactsContactIdRoute
   '/staff/crm/deals/$dealId': typeof StaffCrmDealsDealIdRoute
   '/staff/growth/campaigns/$campaignId': typeof StaffGrowthCampaignsCampaignIdRoute
@@ -529,6 +539,7 @@ export interface FileRouteTypes {
     | '/staff/quotes/$quoteId'
     | '/staff/quotes/new'
     | '/staff/quotes/onsite'
+    | '/staff/vusi-tools/findings-report'
     | '/staff/crm/contacts/$contactId'
     | '/staff/crm/deals/$dealId'
     | '/staff/growth/campaigns/$campaignId'
@@ -581,6 +592,7 @@ export interface FileRouteTypes {
     | '/staff/quotes/$quoteId'
     | '/staff/quotes/new'
     | '/staff/quotes/onsite'
+    | '/staff/vusi-tools/findings-report'
     | '/staff/crm/contacts/$contactId'
     | '/staff/crm/deals/$dealId'
     | '/staff/growth/campaigns/$campaignId'
@@ -634,6 +646,7 @@ export interface FileRouteTypes {
     | '/staff/quotes/$quoteId'
     | '/staff/quotes/new'
     | '/staff/quotes/onsite'
+    | '/staff/vusi-tools/findings-report'
     | '/staff/crm/contacts/$contactId'
     | '/staff/crm/deals/$dealId'
     | '/staff/growth/campaigns/$campaignId'
@@ -947,6 +960,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjectScanTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/staff/vusi-tools/findings-report': {
+      id: '/staff/vusi-tools/findings-report'
+      path: '/findings-report'
+      fullPath: '/staff/vusi-tools/findings-report'
+      preLoaderRoute: typeof StaffVusiToolsFindingsReportRouteImport
+      parentRoute: typeof StaffVusiToolsRoute
+    }
     '/staff/quotes/onsite': {
       id: '/staff/quotes/onsite'
       path: '/onsite'
@@ -1079,6 +1099,18 @@ const StaffQuotesRouteWithChildren = StaffQuotesRoute._addFileChildren(
   StaffQuotesRouteChildren,
 )
 
+interface StaffVusiToolsRouteChildren {
+  StaffVusiToolsFindingsReportRoute: typeof StaffVusiToolsFindingsReportRoute
+}
+
+const StaffVusiToolsRouteChildren: StaffVusiToolsRouteChildren = {
+  StaffVusiToolsFindingsReportRoute: StaffVusiToolsFindingsReportRoute,
+}
+
+const StaffVusiToolsRouteWithChildren = StaffVusiToolsRoute._addFileChildren(
+  StaffVusiToolsRouteChildren,
+)
+
 interface StaffRouteChildren {
   StaffAssetsRiskRoute: typeof StaffAssetsRiskRoute
   StaffAutomationsRoute: typeof StaffAutomationsRoute
@@ -1110,7 +1142,7 @@ interface StaffRouteChildren {
   StaffSubcontractorsRoute: typeof StaffSubcontractorsRoute
   StaffVoiceRoute: typeof StaffVoiceRoute
   StaffVusiRoute: typeof StaffVusiRoute
-  StaffVusiToolsRoute: typeof StaffVusiToolsRoute
+  StaffVusiToolsRoute: typeof StaffVusiToolsRouteWithChildren
   StaffWorkRoute: typeof StaffWorkRoute
   StaffIndexRoute: typeof StaffIndexRoute
 }
@@ -1146,7 +1178,7 @@ const StaffRouteChildren: StaffRouteChildren = {
   StaffSubcontractorsRoute: StaffSubcontractorsRoute,
   StaffVoiceRoute: StaffVoiceRoute,
   StaffVusiRoute: StaffVusiRoute,
-  StaffVusiToolsRoute: StaffVusiToolsRoute,
+  StaffVusiToolsRoute: StaffVusiToolsRouteWithChildren,
   StaffWorkRoute: StaffWorkRoute,
   StaffIndexRoute: StaffIndexRoute,
 }

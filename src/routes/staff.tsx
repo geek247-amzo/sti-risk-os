@@ -56,6 +56,13 @@ const nav = [
     group: "Operate",
   },
   {
+    to: "/staff/vusi-tools/findings-report",
+    label: "Area Findings Report",
+    icon: Camera,
+    exact: true,
+    group: "Operate",
+  },
+  {
     to: "/staff/capability",
     label: "Capability Checklist",
     icon: Wrench,

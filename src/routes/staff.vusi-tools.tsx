@@ -80,15 +80,23 @@ function VusiToolsSansScan() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <div>
-        <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
-          Vusi Tools · Advisory
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">
+            Vusi Tools · Advisory
+          </div>
+          <h1 className="text-2xl font-bold">SANS Fire Compliance Photo Scan</h1>
+          <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
+            Photograph a room or area for an immediate visual read. This is context for on-site
+            efficiency, not a signed-off inspection or asset record.
+          </p>
         </div>
-        <h1 className="text-2xl font-bold">SANS Fire Compliance Photo Scan</h1>
-        <p className="mt-1 max-w-3xl text-sm text-muted-foreground">
-          Photograph a room or area for an immediate visual read. This is context for on-site
-          efficiency, not a signed-off inspection or asset record.
-        </p>
+        <Link
+          to="/staff/vusi-tools/findings-report"
+          className="inline-flex min-h-11 items-center gap-2 rounded-md border border-brand-blue/30 bg-brand-blue/5 px-3 py-2 text-sm font-semibold text-brand-blue hover:bg-brand-blue/10"
+        >
+          Open Area Findings Report
+        </Link>
       </div>
       {error && (
         <div className="flex items-center gap-2 rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">

@@ -9899,7 +9899,7 @@ async function vusiToolsSansScan(request: Request) {
         await client.query(
           `INSERT INTO vusi_tools_scan_results (scan_id, evidence_file_id, checklist_item_id, score, gemini_rationale)
          VALUES ($1, $2, $3, $4, $5) RETURNING id, checklist_item_id, score, gemini_rationale`,
-          [scan.id, evidenceIds[0] ?? null, item.id, scored.score, scored.rationale],
+          [scan.id, null, item.id, scored.score, scored.rationale],
         )
       ).rows[0];
       results.push({
@@ -9924,7 +9924,7 @@ async function vusiToolsEvidenceFile(request: Request, evidenceId: string) {
   if (auth.response) return auth.response;
   const result = await getPool().query(
     `SELECT ef.file_path, ef.mime_type FROM evidence_files ef
-     WHERE ef.id = $1 AND EXISTS (SELECT 1 FROM vusi_tools_scan_results r WHERE r.evidence_file_id = ef.id)`,
+     WHERE ef.id = $1 AND ef.metadata->>'source' = 'vusi_tools_sans_scan'`,
     [evidenceId],
   );
   const row = result.rows[0];

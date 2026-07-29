@@ -13,6 +13,11 @@ type Finding = {
   severity: "info" | "minor" | "moderate" | "critical";
   gemini_rationale: string;
 };
+type ReportAssessment = {
+  imageDescription: string;
+  overview: string;
+  riskLevel: "low" | "moderate" | "high" | "critical";
+};
 type SiteVisit = { id: string; site_name: string; started_at: string };
 
 const severityOrder = { critical: 0, moderate: 1, minor: 2, info: 3 };
@@ -29,6 +34,7 @@ function VusiImageFindingsReport() {
   const [locationNote, setLocationNote] = useState("");
   const [siteVisitId, setSiteVisitId] = useState("");
   const [findings, setFindings] = useState<Finding[]>([]);
+  const [assessment, setAssessment] = useState<ReportAssessment | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -53,6 +59,7 @@ function VusiImageFindingsReport() {
     setError("");
     setNotice("");
     setFindings([]);
+    setAssessment(null);
     const form = new FormData();
     form.append("file", file);
     if (locationNote.trim()) form.set("locationNote", locationNote.trim());
@@ -64,6 +71,11 @@ function VusiImageFindingsReport() {
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Unable to generate report");
+      setAssessment({
+        imageDescription: body.imageDescription ?? "",
+        overview: body.overview ?? "",
+        riskLevel: body.riskLevel ?? "moderate",
+      });
       setFindings(body.findings ?? []);
       setNotice(
         body.findings?.length ? "Report generated." : "No visually evident issues were identified.",
@@ -162,9 +174,34 @@ function VusiImageFindingsReport() {
         </button>
       </form>
 
-      {findings.length > 0 && (
+      {assessment && (
+        <section className="space-y-4 rounded-xl border border-border/60 bg-white p-5 shadow-sm">
+          <div>
+            <h2 className="font-bold">Overall SANS-oriented overview</h2>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">
+                Apparent risk level
+              </span>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-bold uppercase ${severityStyles[assessment.riskLevel === "high" ? "critical" : assessment.riskLevel === "low" ? "info" : assessment.riskLevel]}`}
+              >
+                {assessment.riskLevel}
+              </span>
+            </div>
+            <p className="mt-3 text-sm leading-6">{assessment.overview}</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <h3 className="text-sm font-bold">What the image shows</h3>
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+              {assessment.imageDescription}
+            </p>
+          </div>
+        </section>
+      )}
+
+      {assessment && findings.length > 0 && (
         <section className="rounded-xl border border-border/60 bg-white p-5 shadow-sm">
-          <h2 className="font-bold">Visible findings</h2>
+          <h2 className="font-bold">Visible issues and required actions</h2>
           <div className="mt-3 space-y-3">
             {[...findings]
               .sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity])

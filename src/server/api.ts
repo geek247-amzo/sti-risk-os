@@ -9981,26 +9981,38 @@ type VusiImageFinding = {
   rationale: string;
 };
 
+type VusiImageAssessment = {
+  imageDescription: string;
+  overview: string;
+  riskLevel: "low" | "moderate" | "high" | "critical";
+  findings: VusiImageFinding[];
+};
+
+const emptyVusiImageAssessment = (): VusiImageAssessment => ({
+  imageDescription: "",
+  overview: "No AI assessment was available.",
+  riskLevel: "low",
+  findings: [],
+});
+
 async function generateVusiImageFindings(file: File, locationNote?: string) {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return [] as VusiImageFinding[];
+  if (!apiKey) return emptyVusiImageAssessment();
   const locationContext = locationNote
     ? `Additional location context supplied by Vusi: ${locationNote}`
     : "No additional location context was supplied.";
-  const prompt = [
-    "Review this single site photograph for visibly evident safety or SANS-relevant issues.",
-    "This is an advisory on-site aid, not a formal inspection, certification, engineering opinion, or determination of hidden conditions.",
-    "Flag only issues that are visibly evident in this image. Do not infer concealed defects, compliance status, dimensions, maintenance history, or certification.",
-    "Consider any visible fire, electrical, cable-management, structural, access, housekeeping, or other safety concern; do not limit the review to a fixed checklist.",
-    "If nothing notable is visibly evident, return an empty findings array.",
-    'Return JSON only in this shape: {"findings":[{"description":string,"sansReference":string|null,"severity":"info"|"minor"|"moderate"|"critical","rationale":string}]}',
-    "Use sansReference only when a clause can be identified confidently; otherwise use null.",
-    "Use critical only for an immediately serious visible life-safety or major fire/electrical hazard. Keep severity conservative.",
+  const model =
+    process.env.GEMINI_VUSI_IMAGE_MODEL || process.env.GEMINI_CHAT_MODEL || "gemini-3.5-flash";
+  const imageDescriptionPrompt = [
+    "Describe this single site photograph as neutral visual evidence for a later safety review.",
+    "Describe the room or area, visible equipment and objects, access routes, housekeeping, openings, cables, fire-safety equipment, and anything that appears obstructed or damaged.",
+    "Only describe what can be seen. Do not make SANS or compliance conclusions, infer hidden conditions, estimate measurements, or claim that equipment is absent when it may simply be outside the frame.",
+    "Write one concise but useful paragraph, followed by a short list of visible objects or conditions if helpful.",
     locationContext,
+    'Return JSON only in this shape: {"imageDescription":string}',
   ].join("\n\n");
   try {
-    const model = process.env.GEMINI_CHAT_MODEL || "gemini-2.5-flash";
-    const response = await fetch(
+    const imageResponse = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         method: "POST",
@@ -10014,39 +10026,60 @@ async function generateVusiImageFindings(file: File, locationNote?: string) {
               },
             ],
           },
-          contents: [
-            {
-              role: "user",
-              parts: [
-                { text: prompt },
-                {
-                  inline_data: {
-                    mime_type: file.type || "application/octet-stream",
-                    data: Buffer.from(await file.arrayBuffer()).toString("base64"),
-                  },
-                },
-              ],
-            },
-          ],
+          contents: [{ role: "user", parts: [{ text: imageDescriptionPrompt }, { inline_data: { mime_type: file.type || "application/octet-stream", data: Buffer.from(await file.arrayBuffer()).toString("base64") } }] }],
           generationConfig: {
             temperature: 0.1,
-            maxOutputTokens: 900,
+            maxOutputTokens: 2200,
             response_mime_type: "application/json",
           },
         }),
       },
     );
-    const body = asRecord(await response.json());
-    if (!response.ok) return [] as VusiImageFinding[];
-    const candidates = Array.isArray(body.candidates) ? body.candidates : [];
-    const content = asRecord(asRecord(candidates[0]).content);
-    const text = (Array.isArray(content.parts) ? content.parts : [])
+    const imageBody = asRecord(await imageResponse.json());
+    if (!imageResponse.ok) return emptyVusiImageAssessment();
+    const imageCandidates = Array.isArray(imageBody.candidates) ? imageBody.candidates : [];
+    const imageContent = asRecord(asRecord(imageCandidates[0]).content);
+    const imageText = (Array.isArray(imageContent.parts) ? imageContent.parts : [])
       .map((part) => optionalText(asRecord(part).text))
       .filter(Boolean)
       .join("\n");
-    const parsed = extractJsonArray(text);
-    if (!parsed) return [] as VusiImageFinding[];
-    return parsed.flatMap((entry) => {
+    const imageParsed = extractJsonObject(imageText);
+    const imageDescription = optionalText(imageParsed?.imageDescription) || optionalText(imageText);
+    if (!imageDescription) return emptyVusiImageAssessment();
+
+    const assessmentPrompt = [
+      "Assess the following neutral visual description against relevant South African fire-safety and SANS considerations.",
+      "This is an advisory on-site aid, not a formal inspection, certification, engineering opinion, or determination of hidden conditions.",
+      "Use only the visible evidence in the description. Do not invent measurements, certificates, equipment, clause numbers, or hidden defects.",
+      "Give a short plain-language overview of the area, an apparent risk level, and each visible issue with a practical corrective action in the rationale.",
+      "Use sansReference only when a SANS clause can be identified confidently; otherwise use null. An empty findings array is valid.",
+      'Return JSON only in this shape: {"overview":string,"riskLevel":"low"|"moderate"|"high"|"critical","findings":[{"description":string,"sansReference":string|null,"severity":"info"|"minor"|"moderate"|"critical","rationale":string}]}',
+      locationContext,
+      `Neutral image description:\n${imageDescription}`,
+    ].join("\n\n");
+    const assessmentResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: AbortSignal.timeout(35_000),
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: "Be conservative, clear, and practical. Never turn uncertainty into a failure." }] },
+          contents: [{ role: "user", parts: [{ text: assessmentPrompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 2200, response_mime_type: "application/json" },
+        }),
+      },
+    );
+    const assessmentBody = asRecord(await assessmentResponse.json());
+    if (!assessmentResponse.ok) return { ...emptyVusiImageAssessment(), imageDescription };
+    const assessmentCandidates = Array.isArray(assessmentBody.candidates) ? assessmentBody.candidates : [];
+    const assessmentContent = asRecord(asRecord(assessmentCandidates[0]).content);
+    const assessmentText = (Array.isArray(assessmentContent.parts) ? assessmentContent.parts : [])
+      .map((part) => optionalText(asRecord(part).text)).filter(Boolean).join("\n");
+    const parsed = extractJsonObject(assessmentText);
+    const overview = optionalText(parsed?.overview) || "The image was reviewed for visible SANS-relevant concerns.";
+    const riskLevel = optionalText(parsed?.riskLevel);
+    const findings = Array.isArray(parsed?.findings) ? parsed.findings.flatMap((entry) => {
       const finding = asRecord(entry);
       const description = optionalText(finding.description);
       const rationale = optionalText(finding.rationale);
@@ -10065,9 +10098,15 @@ async function generateVusiImageFindings(file: File, locationNote?: string) {
           rationale,
         },
       ];
-    });
+    }) : [];
+    return {
+      imageDescription,
+      overview,
+      riskLevel: (["low", "moderate", "high", "critical"].includes(riskLevel ?? "") ? riskLevel : "moderate") as VusiImageAssessment["riskLevel"],
+      findings,
+    };
   } catch {
-    return [] as VusiImageFinding[];
+    return emptyVusiImageAssessment();
   }
 }
 
@@ -10077,7 +10116,7 @@ async function vusiToolsImageFindingsReport(request: Request) {
   const pool = getPool();
   if (request.method === "GET") {
     const reports = await pool.query(
-      `SELECT r.id, r.location_note, r.created_at, u.name AS performed_by,
+      `SELECT r.id, r.location_note, r.image_description, r.overview, r.risk_level, r.created_at, u.name AS performed_by,
               ef.id AS evidence_file_id, ef.file_name,
               count(f.id)::int AS finding_count
        FROM vusi_tools_image_reports r
@@ -10144,7 +10183,12 @@ async function vusiToolsImageFindingsReport(request: Request) {
         [evidenceId, siteVisitId, locationNote, auth.user.id],
       )
     ).rows[0];
-    const findings = await generateVusiImageFindings(file, locationNote ?? undefined);
+    const assessment = await generateVusiImageFindings(file, locationNote ?? undefined);
+    await client.query(
+      `UPDATE vusi_tools_image_reports SET image_description = $2, overview = $3, risk_level = $4 WHERE id = $1`,
+      [report.id, assessment.imageDescription, assessment.overview, assessment.riskLevel],
+    );
+    const findings = assessment.findings;
     const savedFindings = [];
     for (const finding of findings) {
       const saved = (
@@ -10165,7 +10209,7 @@ async function vusiToolsImageFindingsReport(request: Request) {
       savedFindings.push(saved);
     }
     await client.query("COMMIT");
-    return json({ ok: true, report, evidenceId, findings: savedFindings }, { status: 201 });
+    return json({ ok: true, report: { ...report, image_description: assessment.imageDescription, overview: assessment.overview, risk_level: assessment.riskLevel }, evidenceId, imageDescription: assessment.imageDescription, overview: assessment.overview, riskLevel: assessment.riskLevel, findings: savedFindings }, { status: 201 });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;

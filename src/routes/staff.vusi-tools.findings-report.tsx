@@ -17,6 +17,8 @@ type ReportAssessment = {
   imageDescription: string;
   overview: string;
   riskLevel: "low" | "moderate" | "high" | "critical";
+  mainConcerns: string[];
+  priorityActions: string[];
 };
 type SiteVisit = { id: string; site_name: string; started_at: string };
 
@@ -75,6 +77,8 @@ function VusiImageFindingsReport() {
         imageDescription: body.imageDescription ?? "",
         overview: body.overview ?? "",
         riskLevel: body.riskLevel ?? "moderate",
+        mainConcerns: body.mainConcerns ?? [],
+        priorityActions: body.priorityActions ?? [],
       });
       setFindings(body.findings ?? []);
       setNotice(
@@ -196,6 +200,16 @@ function VusiImageFindingsReport() {
               {assessment.imageDescription}
             </p>
           </div>
+          {assessment.mainConcerns.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold">Main concerns</h3>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6">
+                {assessment.mainConcerns.map((concern) => (
+                  <li key={concern}>{concern}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
 
@@ -225,6 +239,17 @@ function VusiImageFindingsReport() {
                 </article>
               ))}
           </div>
+        </section>
+      )}
+
+      {assessment && assessment.priorityActions.length > 0 && (
+        <section className="rounded-xl border border-orange-200 bg-orange-50 p-5 shadow-sm">
+          <h2 className="font-bold text-orange-900">Priority corrective actions</h2>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-orange-950">
+            {assessment.priorityActions.map((action) => (
+              <li key={action}>{action}</li>
+            ))}
+          </ol>
         </section>
       )}
       <p className="text-xs text-muted-foreground">

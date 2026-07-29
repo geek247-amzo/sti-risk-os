@@ -9986,6 +9986,8 @@ type VusiImageAssessment = {
   overview: string;
   riskLevel: "low" | "moderate" | "high" | "critical";
   findings: VusiImageFinding[];
+  mainConcerns: string[];
+  priorityActions: string[];
 };
 
 const emptyVusiImageAssessment = (): VusiImageAssessment => ({
@@ -9993,6 +9995,8 @@ const emptyVusiImageAssessment = (): VusiImageAssessment => ({
   overview: "No AI assessment was available.",
   riskLevel: "low",
   findings: [],
+  mainConcerns: [],
+  priorityActions: [],
 });
 
 async function generateVusiImageFindings(file: File, locationNote?: string) {
@@ -10053,7 +10057,7 @@ async function generateVusiImageFindings(file: File, locationNote?: string) {
       "Use only the visible evidence in the description. Do not invent measurements, certificates, equipment, clause numbers, or hidden defects.",
       "Give a short plain-language overview of the area, an apparent risk level, and each visible issue with a practical corrective action in the rationale.",
       "Use sansReference only when a SANS clause can be identified confidently; otherwise use null. An empty findings array is valid.",
-      'Return JSON only in this shape: {"overview":string,"riskLevel":"low"|"moderate"|"high"|"critical","findings":[{"description":string,"sansReference":string|null,"severity":"info"|"minor"|"moderate"|"critical","rationale":string}]}',
+      'Return JSON only in this shape: {"overview":string,"riskLevel":"low"|"moderate"|"high"|"critical","mainConcerns":[string],"priorityActions":[string],"findings":[{"description":string,"sansReference":string|null,"severity":"info"|"minor"|"moderate"|"critical","rationale":string}]}',
       locationContext,
       `Neutral image description:\n${imageDescription}`,
     ].join("\n\n");
@@ -10079,6 +10083,12 @@ async function generateVusiImageFindings(file: File, locationNote?: string) {
     const parsed = extractJsonObject(assessmentText);
     const overview = optionalText(parsed?.overview) || "The image was reviewed for visible SANS-relevant concerns.";
     const riskLevel = optionalText(parsed?.riskLevel);
+    const mainConcerns = Array.isArray(parsed?.mainConcerns)
+      ? parsed.mainConcerns.filter((item): item is string => typeof item === "string" && !!item.trim()).slice(0, 8)
+      : [];
+    const priorityActions = Array.isArray(parsed?.priorityActions)
+      ? parsed.priorityActions.filter((item): item is string => typeof item === "string" && !!item.trim()).slice(0, 8)
+      : [];
     const findings = Array.isArray(parsed?.findings) ? parsed.findings.flatMap((entry) => {
       const finding = asRecord(entry);
       const description = optionalText(finding.description);
@@ -10104,6 +10114,8 @@ async function generateVusiImageFindings(file: File, locationNote?: string) {
       overview,
       riskLevel: (["low", "moderate", "high", "critical"].includes(riskLevel ?? "") ? riskLevel : "moderate") as VusiImageAssessment["riskLevel"],
       findings,
+      mainConcerns,
+      priorityActions,
     };
   } catch {
     return emptyVusiImageAssessment();
@@ -10116,7 +10128,7 @@ async function vusiToolsImageFindingsReport(request: Request) {
   const pool = getPool();
   if (request.method === "GET") {
     const reports = await pool.query(
-      `SELECT r.id, r.location_note, r.image_description, r.overview, r.risk_level, r.created_at, u.name AS performed_by,
+      `SELECT r.id, r.location_note, r.image_description, r.overview, r.risk_level, r.main_concerns, r.priority_actions, r.created_at, u.name AS performed_by,
               ef.id AS evidence_file_id, ef.file_name,
               count(f.id)::int AS finding_count
        FROM vusi_tools_image_reports r
@@ -10185,8 +10197,8 @@ async function vusiToolsImageFindingsReport(request: Request) {
     ).rows[0];
     const assessment = await generateVusiImageFindings(file, locationNote ?? undefined);
     await client.query(
-      `UPDATE vusi_tools_image_reports SET image_description = $2, overview = $3, risk_level = $4 WHERE id = $1`,
-      [report.id, assessment.imageDescription, assessment.overview, assessment.riskLevel],
+      `UPDATE vusi_tools_image_reports SET image_description = $2, overview = $3, risk_level = $4, main_concerns = $5::jsonb, priority_actions = $6::jsonb WHERE id = $1`,
+      [report.id, assessment.imageDescription, assessment.overview, assessment.riskLevel, JSON.stringify(assessment.mainConcerns), JSON.stringify(assessment.priorityActions)],
     );
     const findings = assessment.findings;
     const savedFindings = [];
@@ -10209,7 +10221,7 @@ async function vusiToolsImageFindingsReport(request: Request) {
       savedFindings.push(saved);
     }
     await client.query("COMMIT");
-    return json({ ok: true, report: { ...report, image_description: assessment.imageDescription, overview: assessment.overview, risk_level: assessment.riskLevel }, evidenceId, imageDescription: assessment.imageDescription, overview: assessment.overview, riskLevel: assessment.riskLevel, findings: savedFindings }, { status: 201 });
+    return json({ ok: true, report: { ...report, image_description: assessment.imageDescription, overview: assessment.overview, risk_level: assessment.riskLevel, main_concerns: assessment.mainConcerns, priority_actions: assessment.priorityActions }, evidenceId, imageDescription: assessment.imageDescription, overview: assessment.overview, riskLevel: assessment.riskLevel, mainConcerns: assessment.mainConcerns, priorityActions: assessment.priorityActions, findings: savedFindings }, { status: 201 });
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;

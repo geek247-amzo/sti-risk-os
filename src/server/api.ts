@@ -6173,7 +6173,10 @@ async function siteVisits(request: Request) {
   if (request.method === "GET") {
     const result = await getPool().query(
       `SELECT sv.*, o.name AS organization_name, s.name AS site_name, p.name AS project_name,
-        c.name AS container_name, cp.po_number, wi.title AS work_item_title
+        c.name AS container_name, cp.po_number, wi.title AS work_item_title,
+        COALESCE(n.note_count, 0)::int AS note_count,
+        COALESCE(n.urgent_count, 0)::int AS urgent_note_count,
+        COALESCE(n.danger_count, 0)::int AS immediate_danger_count
        FROM site_visits sv
        JOIN organizations o ON o.id = sv.organization_id
        JOIN sites s ON s.id = sv.site_id
@@ -6181,6 +6184,12 @@ async function siteVisits(request: Request) {
        LEFT JOIN projects p ON p.id = sv.project_id
        LEFT JOIN client_pos cp ON cp.id = sv.client_po_id
        LEFT JOIN work_items wi ON wi.id = sv.work_item_id
+       LEFT JOIN (
+         SELECT site_visit_id, count(*) AS note_count,
+                count(*) FILTER (WHERE is_urgent) AS urgent_count,
+                count(*) FILTER (WHERE is_immediate_danger) AS danger_count
+         FROM site_visit_notes GROUP BY site_visit_id
+       ) n ON n.site_visit_id = sv.id
        ORDER BY sv.started_at DESC LIMIT 200`,
     );
     return json({ siteVisits: result.rows });
@@ -6200,6 +6209,68 @@ async function siteVisits(request: Request) {
   } finally {
     client.release();
   }
+}
+
+async function siteVisitNotes(request: Request, siteVisitId: string) {
+  const auth = await requireUser(request, ["admin", "staff"]);
+  if (auth.response) return auth.response;
+  const pool = getPool();
+  const visit = await pool.query("SELECT id FROM site_visits WHERE id = $1", [siteVisitId]);
+  if (!visit.rows[0]) return json({ error: "Site visit not found" }, { status: 404 });
+  if (request.method === "GET") {
+    const notes = await pool.query(
+      `SELECT n.*, u.name AS created_by_name, ef.file_name
+       FROM site_visit_notes n
+       LEFT JOIN app_users u ON u.id = n.created_by
+       LEFT JOIN evidence_files ef ON ef.id = n.evidence_file_id
+       WHERE n.site_visit_id = $1 ORDER BY n.created_at DESC`,
+      [siteVisitId],
+    );
+    return json({ notes: notes.rows });
+  }
+  const body = asRecord(await readJson(request));
+  const noteType = requireOneOf(body.noteType ?? body.note_type, "Note type", [
+    "voice", "typed", "question", "recommendation", "missing_information",
+  ] as const);
+  const noteBody = requireText(body.body ?? body.note, "Note");
+  const evidenceFileId = optionalText(body.evidenceFileId ?? body.evidence_file_id);
+  const isUrgent = Boolean(body.isUrgent ?? body.is_urgent);
+  const isImmediateDanger = Boolean(body.isImmediateDanger ?? body.is_immediate_danger);
+  const needsSpecialistReview = Boolean(
+    body.needsSpecialistReview ?? body.needs_specialist_review,
+  );
+  if (evidenceFileId) {
+    const evidence = await pool.query(
+      "SELECT id FROM evidence_files WHERE id = $1 AND site_visit_id = $2",
+      [evidenceFileId, siteVisitId],
+    );
+    if (!evidence.rows[0])
+      return json({ error: "Evidence does not belong to this site visit" }, { status: 400 });
+  }
+  const result = await pool.query(
+    `INSERT INTO site_visit_notes
+       (site_visit_id, evidence_file_id, note_type, body, is_urgent, is_immediate_danger, needs_specialist_review, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [
+      siteVisitId,
+      evidenceFileId,
+      noteType,
+      noteBody,
+      isUrgent || isImmediateDanger,
+      isImmediateDanger,
+      needsSpecialistReview,
+      auth.user.id,
+    ],
+  );
+  await audit(
+    pool,
+    "create_site_visit_note",
+    "site_visit_note",
+    result.rows[0].id,
+    { siteVisitId, noteType, isUrgent: isUrgent || isImmediateDanger, isImmediateDanger, needsSpecialistReview },
+    auth.user,
+  );
+  return json({ ok: true, note: result.rows[0] }, { status: 201 });
 }
 
 async function projectQrManagement(request: Request, projectId: string) {
@@ -16571,6 +16642,9 @@ export async function handleApiRequest(request: Request): Promise<Response | nul
       return complianceContext(request);
     if (path === "/api/site-visits" && (request.method === "GET" || request.method === "POST"))
       return siteVisits(request);
+    const siteVisitNotesMatch = path.match(/^\/api\/site-visits\/([^/]+)\/notes$/);
+    if (siteVisitNotesMatch?.[1] && (request.method === "GET" || request.method === "POST"))
+      return siteVisitNotes(request, siteVisitNotesMatch[1]);
     if (
       path === "/api/compliance-records" &&
       (request.method === "GET" || request.method === "POST")

@@ -115,6 +115,13 @@ const nav = [
     exact: true,
     group: "Operate",
   },
+  {
+    to: "/staff/site-visits",
+    label: "Site Visits",
+    icon: ClipboardCheck,
+    exact: true,
+    group: "Operate",
+  },
   { to: "/staff/project-qr", label: "Project QR", icon: QrCode, exact: true, group: "Operate" },
   {
     to: "/staff/project-sticker",

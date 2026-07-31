@@ -23,6 +23,7 @@ import { Route as StaffVusiRouteImport } from './routes/staff.vusi'
 import { Route as StaffVoiceRouteImport } from './routes/staff.voice'
 import { Route as StaffSubcontractorsRouteImport } from './routes/staff.subcontractors'
 import { Route as StaffSteveRouteImport } from './routes/staff.steve'
+import { Route as StaffSiteVisitsRouteImport } from './routes/staff.site-visits'
 import { Route as StaffSettingsRouteImport } from './routes/staff.settings'
 import { Route as StaffScheduleRouteImport } from './routes/staff.schedule'
 import { Route as StaffReportsRouteImport } from './routes/staff.reports'
@@ -130,6 +131,11 @@ const StaffSubcontractorsRoute = StaffSubcontractorsRouteImport.update({
 const StaffSteveRoute = StaffSteveRouteImport.update({
   id: '/steve',
   path: '/steve',
+  getParentRoute: () => StaffRoute,
+} as any)
+const StaffSiteVisitsRoute = StaffSiteVisitsRouteImport.update({
+  id: '/site-visits',
+  path: '/site-visits',
   getParentRoute: () => StaffRoute,
 } as any)
 const StaffSettingsRoute = StaffSettingsRouteImport.update({
@@ -362,6 +368,7 @@ export interface FileRoutesByFullPath {
   '/staff/reports': typeof StaffReportsRoute
   '/staff/schedule': typeof StaffScheduleRoute
   '/staff/settings': typeof StaffSettingsRoute
+  '/staff/site-visits': typeof StaffSiteVisitsRoute
   '/staff/steve': typeof StaffSteveRoute
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
@@ -415,6 +422,7 @@ export interface FileRoutesByTo {
   '/staff/reports': typeof StaffReportsRoute
   '/staff/schedule': typeof StaffScheduleRoute
   '/staff/settings': typeof StaffSettingsRoute
+  '/staff/site-visits': typeof StaffSiteVisitsRoute
   '/staff/steve': typeof StaffSteveRoute
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
@@ -470,6 +478,7 @@ export interface FileRoutesById {
   '/staff/reports': typeof StaffReportsRoute
   '/staff/schedule': typeof StaffScheduleRoute
   '/staff/settings': typeof StaffSettingsRoute
+  '/staff/site-visits': typeof StaffSiteVisitsRoute
   '/staff/steve': typeof StaffSteveRoute
   '/staff/subcontractors': typeof StaffSubcontractorsRoute
   '/staff/voice': typeof StaffVoiceRoute
@@ -526,6 +535,7 @@ export interface FileRouteTypes {
     | '/staff/reports'
     | '/staff/schedule'
     | '/staff/settings'
+    | '/staff/site-visits'
     | '/staff/steve'
     | '/staff/subcontractors'
     | '/staff/voice'
@@ -579,6 +589,7 @@ export interface FileRouteTypes {
     | '/staff/reports'
     | '/staff/schedule'
     | '/staff/settings'
+    | '/staff/site-visits'
     | '/staff/steve'
     | '/staff/subcontractors'
     | '/staff/voice'
@@ -633,6 +644,7 @@ export interface FileRouteTypes {
     | '/staff/reports'
     | '/staff/schedule'
     | '/staff/settings'
+    | '/staff/site-visits'
     | '/staff/steve'
     | '/staff/subcontractors'
     | '/staff/voice'
@@ -762,6 +774,13 @@ declare module '@tanstack/react-router' {
       path: '/steve'
       fullPath: '/staff/steve'
       preLoaderRoute: typeof StaffSteveRouteImport
+      parentRoute: typeof StaffRoute
+    }
+    '/staff/site-visits': {
+      id: '/staff/site-visits'
+      path: '/site-visits'
+      fullPath: '/staff/site-visits'
+      preLoaderRoute: typeof StaffSiteVisitsRouteImport
       parentRoute: typeof StaffRoute
     }
     '/staff/settings': {
@@ -1138,6 +1157,7 @@ interface StaffRouteChildren {
   StaffReportsRoute: typeof StaffReportsRoute
   StaffScheduleRoute: typeof StaffScheduleRoute
   StaffSettingsRoute: typeof StaffSettingsRoute
+  StaffSiteVisitsRoute: typeof StaffSiteVisitsRoute
   StaffSteveRoute: typeof StaffSteveRoute
   StaffSubcontractorsRoute: typeof StaffSubcontractorsRoute
   StaffVoiceRoute: typeof StaffVoiceRoute
@@ -1174,6 +1194,7 @@ const StaffRouteChildren: StaffRouteChildren = {
   StaffReportsRoute: StaffReportsRoute,
   StaffScheduleRoute: StaffScheduleRoute,
   StaffSettingsRoute: StaffSettingsRoute,
+  StaffSiteVisitsRoute: StaffSiteVisitsRoute,
   StaffSteveRoute: StaffSteveRoute,
   StaffSubcontractorsRoute: StaffSubcontractorsRoute,
   StaffVoiceRoute: StaffVoiceRoute,
